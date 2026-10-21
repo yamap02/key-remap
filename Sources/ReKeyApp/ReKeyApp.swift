@@ -1,0 +1,58 @@
+import SwiftUI
+import AppKit
+import ReKeyModel
+
+@main struct ReKeyApp: App {
+    @AppStorage("language") private var language = "ja"
+    @State private var state = AppState()
+    var body: some Scene {
+        Window("ReKey", id: "settings") {
+            SettingsView(state: state).environment(\.locale, language == "system" ? .autoupdatingCurrent : Locale(identifier: language))
+                .frame(minWidth: 920, minHeight: 640)
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    if !state.uninstalling { state.flush(); state.runtime.shutdown() }
+                }
+        }
+        .defaultSize(width: 1080, height: 760)
+        .windowStyle(.automatic)
+        .commands {
+            CommandGroup(replacing: .newItem) { Button("設定を開く…") { openSettings() }.keyboardShortcut(",") }
+            CommandMenu("ReKey") {
+                Button(L(state.isPaused ? "再開" : "一時停止")) { state.togglePause() }.keyboardShortcut("p", modifiers: [.control, .option, .command])
+                Button("設定を再読込") { state.reload(reloadEngine: true) }.keyboardShortcut("r", modifiers: [.command, .shift])
+                Button("設定をインポート…") { state.importFile() }
+                Button("設定を書き出す…") { state.exportFile() }
+            }
+        }
+        Window("ReKey EventViewer", id: "events") {
+            EventViewer(state: state).environment(\.locale, language == "system" ? .autoupdatingCurrent : Locale(identifier: language)).frame(minWidth: 880, minHeight: 520)
+        }.defaultSize(width: 1040, height: 640)
+        MenuBarExtra {
+            MenuContent(state: state).environment(\.locale, language == "system" ? .autoupdatingCurrent : Locale(identifier: language))
+        } label: {
+            Image(nsImage: state.operational ? AppIcons.active : state.isPaused ? AppIcons.paused : AppIcons.attention)
+                .accessibilityLabel("ReKey · \(L(state.statusTitle))")
+                .help("ReKey · \(L(state.statusTitle))")
+        }
+    }
+    private func openSettings() { NSApp.activate(ignoringOtherApps: true); NSApp.windows.first(where: { $0.title == "ReKey" })?.makeKeyAndOrderFront(nil) }
+}
+struct MenuContent: View {
+    @Bindable var state: AppState
+    @Environment(\.openWindow) private var openWindow
+    var body: some View {
+        Text("ReKey · \(L(state.statusTitle))")
+        Divider()
+        ForEach(state.config.profiles) { p in
+            Button { state.selectProfile(p.id) } label: { if p.selected { Label(p.name, systemImage: "checkmark") } else { Text(p.name) } }
+        }
+        Divider()
+        Button(L(state.isPaused ? "リマップを再開" : "一時停止")) { state.togglePause() }
+        Button("設定を開く…") { openWindow(id: "settings"); NSApp.activate(ignoringOtherApps: true) }
+        Button("EventViewer を開く…") { openWindow(id: "events"); NSApp.activate(ignoringOtherApps: true) }
+        Button("設定を再読込") { state.reload(reloadEngine: true) }
+        Divider()
+        Button("ReKey をアンインストール…") { state.showUninstall = true; openWindow(id: "settings"); NSApp.activate(ignoringOtherApps: true) }
+        Button("ReKey を終了") { NSApp.terminate(nil) }.keyboardShortcut("q")
+    }
+}
