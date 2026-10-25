@@ -6,6 +6,8 @@ macOS 27 / Apple Silicon 向けのメニューバー型キーリマッパー。S
 
 仕様原本は [docs/specification-ja.md](docs/specification-ja.md)、要件ごとの進捗と残作業は [docs/requirements.md](docs/requirements.md) にあります。
 
+権限と常駐プロセスの削減可否は [実現性レポート](docs/permission-process-assessment-ja.md) にまとめています。
+
 ## ビルドとテスト
 
 必要環境: macOS 27、Apple Silicon、Xcode の macOS 27 SDK / Swift 6、Command Line Tools。
