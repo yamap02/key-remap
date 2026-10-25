@@ -9,6 +9,16 @@ stage=$(mktemp -d "${TMPDIR:-/tmp}/rekey-package.XXXXXX")
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/root/Applications" "$stage/scripts"
 ditto --noextattr --noqtn --norsrc build/ReKey.app "$stage/root/Applications/ReKey.app"
+cat > "$stage/scripts/preinstall" <<'SCRIPT'
+#!/bin/sh
+set -eu
+# Stop the old capture process before removing its output helper. launchd's
+# Background Items registration is refreshed through SMAppService by the UI.
+/bin/launchctl bootout system/jp.example.rekey.core 2>/dev/null || true
+/bin/launchctl bootout system/jp.example.rekey.vhid 2>/dev/null || true
+exit 0
+SCRIPT
+chmod 755 "$stage/scripts/preinstall"
 cat > "$stage/scripts/postinstall" <<'SCRIPT'
 #!/bin/sh
 set -eu

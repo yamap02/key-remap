@@ -3,7 +3,7 @@
 #import <Security/Security.h>
 #import <SystemConfiguration/SystemConfiguration.h>
 #include "Engine.hpp"
-#include "Transport.hpp"
+#include "VirtualHIDOutput.hpp"
 #include <IOKit/hid/IOHIDManager.h>
 #include <IOKit/hidsystem/IOHIDLib.h>
 #include <pwd.h>
@@ -11,6 +11,7 @@
 #include <iostream>
 #include <libproc.h>
 #include <sys/file.h>
+#include <signal.h>
 #include <os/log.h>
 #include <mach/mach_time.h>
 #include <mach-o/dyld.h>
@@ -22,14 +23,14 @@ struct Trace {uint64_t time;uint32_t device,key,output;bool down,output_down;int
 class Core {
 public:
     IOHIDManagerRef manager=nullptr;std::array<Device,32> devices{};rekey::JSON config;std::string error="Configuration not loaded";uid_t uid=0;std::string config_path;time_t modified=0;long modified_ns=0;dispatch_source_t config_watch=nullptr,link_watch=nullptr;std::string watch_path;
-    rekey::Ring* ring=nullptr;int socket=-1;bool paused=true,viewer=false,secure=true,conflict=false,input_monitoring=false,agent_accessibility=false;uint64_t viewer_deadline=0,housekeeping=0,last_context=0,ui_deadline=0;std::array<Trace,2048> traces{};size_t trace_write=0,trace_read=0;struct PendingAction {uint32_t device;int action;};std::array<PendingAction,256> actions{};size_t action_write=0,action_read=0;rekey::Context context;
+    rekey::VirtualHIDOutput output;uint64_t output_epoch=0;bool paused=true,viewer=false,secure=true,conflict=false,input_monitoring=false,agent_accessibility=false;uint64_t viewer_deadline=0,housekeeping=0,last_context=0,ui_deadline=0;std::array<Trace,2048> traces{};size_t trace_write=0,trace_read=0;struct PendingAction {uint32_t device;int action;};std::array<PendingAction,256> actions{};size_t action_write=0,action_read=0;rekey::Context context;
     Core(){
         manager=IOHIDManagerCreate(kCFAllocatorDefault,kIOHIDManagerOptionIndependentDevices);NSDictionary* match=@{@kIOHIDDeviceUsagePageKey:@1,@kIOHIDDeviceUsageKey:@6};IOHIDManagerSetDeviceMatching(manager,(__bridge CFDictionaryRef)match);
         IOHIDManagerRegisterDeviceMatchingCallback(manager,[](void* ctx,IOReturn,void*,IOHIDDeviceRef d){static_cast<Core*>(ctx)->add(d);},this);
         IOHIDManagerRegisterDeviceRemovalCallback(manager,[](void* ctx,IOReturn,void*,IOHIDDeviceRef d){static_cast<Core*>(ctx)->remove(d);},this);
         IOHIDManagerScheduleWithRunLoop(manager,CFRunLoopGetMain(),kCFRunLoopDefaultMode);IOHIDManagerOpen(manager,0);
     }
-    ~Core(){if(config_watch)dispatch_source_cancel(config_watch);if(link_watch)dispatch_source_cancel(link_watch);stop();if(socket>=0)close(socket);if(ring)munmap(ring,sizeof(rekey::Ring));IOHIDManagerClose(manager,0);CFRelease(manager);}
+    ~Core(){if(config_watch)dispatch_source_cancel(config_watch);if(link_watch)dispatch_source_cancel(link_watch);stop();IOHIDManagerClose(manager,0);CFRelease(manager);}
     void add(IOHIDDeviceRef hid){
         auto str=[&](CFStringRef k){auto v=IOHIDDeviceGetProperty(hid,k);return v&&CFGetTypeID(v)==CFStringGetTypeID()?std::string([(__bridge NSString*)v UTF8String]):std::string();};
         auto num=[&](CFStringRef k){int n=0;auto v=IOHIDDeviceGetProperty(hid,k);if(v&&CFGetTypeID(v)==CFNumberGetTypeID())CFNumberGetValue((CFNumberRef)v,kCFNumberIntType,&n);return n;};
@@ -39,16 +40,17 @@ public:
     }
     void remove(IOHIDDeviceRef hid){trace_read=trace_write;action_read=action_write;for(auto& d:devices)if(d.hid==hid){release(d);CFRelease(d.hid);d=Device();break;}}
     void compile(Device& d){if(config.is_null())return;try{auto e=std::make_unique<rekey::Engine>(rekey::Program::compile(config,d.identity),d.identity);e->update_context(context);release(d);d.engine=std::move(e);}catch(const std::exception& e){error=e.what();paused=true;stop();}}
-    void stop(){action_read=action_write;for(auto& d:devices)release(d);viewer=false;trace_read=trace_write;}
+    void stop(){action_read=action_write;bool seized=false;for(auto& d:devices){seized=seized||d.seized;release(d);}if(seized)output.reset();viewer=false;trace_read=trace_write;}
     void release(Device& d){if(d.seized){if(d.engine)send(d.engine->release_all(now_ms()),d);IOHIDDeviceUnscheduleFromRunLoop(d.hid,CFRunLoopGetMain(),kCFRunLoopDefaultMode);IOHIDDeviceClose(d.hid,0);d.seized=false;}}
     void send(const rekey::Outputs& out,Device& d){
-        if(!ring||socket<0)return;
-        for(size_t i=0;i<out.user_action_count;++i){if(action_write-action_read==actions.size()){paused=true;error="User action queue overflow";return;}actions[action_write++%actions.size()]={uint32_t(&d-devices.data()),out.user_actions[i]};}
-        if(out.overflow){if(socket>=0){close(socket);socket=-1;}paused=true;error="Output batch overflow; remapping paused";return;}
-        for(size_t i=0;i<out.size;++i){auto& e=out.values[i];if(!ring||!ring->push({e.key,uint32_t(e.down),clock_gettime_nsec_np(CLOCK_UPTIME_RAW)})){if(socket>=0){close(socket);socket=-1;}paused=true;error="Virtual HID queue overflow; remapping paused";break;}++d.outputs;}
-        if(out.size&&socket>=0){char notify=1;if(::send(socket,&notify,1,MSG_DONTWAIT)<0&&errno!=EAGAIN){close(socket);socket=-1;error="Virtual HID connection lost; reconnecting";}}
+        if(!output.ready())return;
+        for(size_t i=0;i<out.user_action_count;++i){if(action_write-action_read==actions.size()){paused=true;output.reset();error="User action queue overflow";return;}actions[action_write++%actions.size()]={uint32_t(&d-devices.data()),out.user_actions[i]};}
+        if(out.overflow){output.reset();paused=true;error="Output batch overflow; remapping paused";return;}
+        for(size_t i=0;i<out.size;++i){auto& e=out.values[i];if(!output.send(e.key,e.down)){output.reset();paused=true;error="Virtual HID output unavailable or queue overflow; remapping paused";break;}++d.outputs;}
     }
+
     void value(IOHIDValueRef v){
+        if(output_epoch!=output.epoch()||!output.ready()){stop();return;}
         auto element=IOHIDValueGetElement(v);auto hid=IOHIDElementGetDevice(element);auto page=IOHIDElementGetUsagePage(element),usage=IOHIDElementGetUsage(element);if((page!=7&&page!=12&&page!=0xff&&page!=0xff01)||usage==0)return;
         Device* d=nullptr;for(auto& x:devices)if(x.hid==hid){d=&x;break;}if(!d||!d->seized||!d->engine||d->muted)return;
         rekey::Key key=page==7?usage:(page<<16)|usage;bool down=IOHIDValueGetIntegerValue(v)!=0;if(d->inputs++==0)d->started=now_ms();
@@ -95,9 +97,9 @@ public:
     }
     void tick(){
         if(now_ms()-housekeeping>=1000){housekeeping=now_ms();load();conflict=karabiner();input_monitoring=IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)==kIOHIDAccessTypeGranted;}
-        if(socket<0){stop();if(ring){munmap(ring,sizeof(rekey::Ring));ring=nullptr;}socket=rekey::connect_vhid();if(socket>=0){ring=rekey::map_ring(false);if(!ring){close(socket);socket=-1;}}}
-        if(socket>=0){char b;auto n=recv(socket,&b,1,MSG_PEEK|MSG_DONTWAIT);if(n==0||(n<0&&errno!=EAGAIN&&errno!=EINTR)){stop();close(socket);socket=-1;if(ring){munmap(ring,sizeof(rekey::Ring));ring=nullptr;}}}
-        if(paused||(config.is_object()&&config.at("global").value("disable_on_quit",true)&&now_ms()>ui_deadline)||conflict||!ring||!ring->ready.load(std::memory_order_acquire)){stop();return;}
+        output.heartbeat();
+        if(output_epoch!=output.epoch()){stop();output_epoch=output.epoch();}
+        if(paused||(config.is_object()&&config.at("global").value("disable_on_quit",true)&&now_ms()>ui_deadline)||conflict||!output.ready()){stop();return;}
         if(!input_monitoring){error="Input Monitoring permission is required for rekey-core";stop();return;}
         bool disable_builtin=false;for(auto& d:devices)if(d.hid&&!d.identity.builtin&&d.engine&&d.engine->program().disable_builtin)disable_builtin=true;
         for(auto& d:devices){if(!d.hid||!d.engine)continue;if(d.engine->program().ignore){release(d);continue;}
@@ -111,7 +113,7 @@ public:
         if(paused)stop();
         if(viewer&&now_ms()>viewer_deadline){viewer=false;trace_read=trace_write;}
     }
-    NSString* status(){size_t seized=0;for(auto& d:devices)if(d.seized)++seized;rekey::JSON j={{"paused",paused},{"driver_ready",ring&&ring->ready.load()},{"input_monitoring",input_monitoring},{"agent_accessibility",agent_accessibility&&now_ms()-last_context<500},{"seized_devices",seized},{"conflict",conflict},{"error",error},{"uid",uid}};return [NSString stringWithUTF8String:j.dump().c_str()];}
+    NSString* status(){size_t seized=0;for(auto& d:devices)if(d.seized)++seized;rekey::JSON j={{"paused",paused},{"driver_ready",output.ready()},{"input_monitoring",input_monitoring},{"agent_accessibility",agent_accessibility&&now_ms()-last_context<500},{"seized_devices",seized},{"conflict",conflict},{"error",error},{"uid",uid}};return [NSString stringWithUTF8String:j.dump().c_str()];}
     NSData* take_actions(){rekey::JSON a=rekey::JSON::array();while(action_read<action_write){auto request=actions[action_read++%actions.size()];auto& d=devices[request.device];if(d.engine&&request.action>=0&&size_t(request.action)<d.engine->program().user_actions.size())a.push_back(d.engine->program().user_actions[request.action]);}auto s=a.dump();return [NSData dataWithBytes:s.data() length:s.size()];}
     NSData* events(bool enabled){
         viewer=enabled;viewer_deadline=now_ms()+4000;rekey::JSON a=rekey::JSON::array();
@@ -157,6 +159,10 @@ bool allowed(uid_t caller,bool require_owner){uid_t console=0;gid_t gid;CFString
     if(app.length>512||source.length>512){reply(NO);return;}uid_t caller=[NSXPCConnection currentConnection].effectiveUserIdentifier;
     dispatch_async(dispatch_get_main_queue(), ^{if(!allowed(caller,true)){reply(NO);return;}bool context_changed=core->context.app!=app.UTF8String||core->context.input_source!=source.UTF8String;core->context={app.UTF8String,source.UTF8String};core->agent_accessibility=accessibility;core->secure=secure||!accessibility;core->last_context=now_ms();if(core->secure)core->trace_read=core->trace_write;if(context_changed)for(auto& d:core->devices)if(d.engine)d.engine->update_context(core->context);reply(YES);});
 }
+- (void)viewerRequestedWithReply:(void (^)(BOOL))reply {
+    uid_t caller=[NSXPCConnection currentConnection].effectiveUserIdentifier;
+    dispatch_async(dispatch_get_main_queue(), ^{reply(allowed(caller,true)&&core->viewer&&now_ms()<core->viewer_deadline);});
+}
 - (void)actionsWithReply:(void (^)(NSData*))reply {uid_t caller=[NSXPCConnection currentConnection].effectiveUserIdentifier;dispatch_async(dispatch_get_main_queue(), ^{reply(allowed(caller,true)?core->take_actions():[NSData data]);});}
 - (void)eventsWithEnabled:(BOOL)enabled reply:(void (^)(NSData*))reply {uid_t caller=[NSXPCConnection currentConnection].effectiveUserIdentifier;dispatch_async(dispatch_get_main_queue(), ^{reply(allowed(caller,true)?core->events(enabled):[NSData data]);});}
 @end
@@ -195,7 +201,13 @@ int main(int argc,const char* argv[]){
         Listener* delegate=[Listener new];delegate.requirement=[requirements componentsJoinedByString:@" or "];
         NSXPCListener* listener=[[NSXPCListener alloc] initWithMachServiceName:@"jp.example.rekey.core"];listener.delegate=delegate;[listener resume];
         [NSTimer scheduledTimerWithTimeInterval:0.005 repeats:YES block:^(NSTimer*){core->tick();}];
-        [[NSRunLoop currentRunLoop] run];
+        signal(SIGTERM,SIG_IGN);signal(SIGINT,SIG_IGN);
+        dispatch_source_t termination=dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL,SIGTERM,0,dispatch_get_main_queue());
+        dispatch_source_set_event_handler(termination,^{core->stop();CFRunLoopStop(CFRunLoopGetMain());});dispatch_resume(termination);
+        dispatch_source_t interrupt=dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL,SIGINT,0,dispatch_get_main_queue());
+        dispatch_source_set_event_handler(interrupt,^{core->stop();CFRunLoopStop(CFRunLoopGetMain());});dispatch_resume(interrupt);
+        CFRunLoopRun();
+        dispatch_source_cancel(termination);dispatch_source_cancel(interrupt);
         close(lock);
     }
 }

@@ -66,6 +66,10 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         showWelcome = !FileManager.default.fileExists(atPath: store.url.path)
         reload()
         refreshSystem()
+        Task {
+            do { try await retireLegacyOutputService() }
+            catch { self.error = "旧入力サービスを停止できませんでした: \(error.localizedDescription)" }
+        }
         polling = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(3))
@@ -178,8 +182,20 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         registerServices()
     }
     func registerServices() {
+        Task {
+            do {
+                try await retireLegacyOutputService()
+                await registerCurrentServices()
+            } catch { self.error = "旧入力サービスを停止できませんでした: \(error.localizedDescription)" }
+        }
+    }
+    private func retireLegacyOutputService() async throws {
+        let legacy = SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist")
+        if legacy.status == .notFound { try? await legacy.unregister() }
+        else if legacy.status != .notRegistered { try await legacy.unregister() }
+    }
+    private func registerCurrentServices() async {
         var services = [
-            ("rekey-vhid", SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist")),
             ("rekey-core", SMAppService.daemon(plistName: "jp.example.rekey.core.plist")),
             ("ReKey Agent", SMAppService.agent(plistName: "jp.example.rekey.agent.plist"))
         ]
@@ -191,12 +207,18 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         for (name, service) in services {
             if service.status == .enabled { continue }
             // A stale Background Items record must be removed before retrying.
-            if service.status == .notFound { try? service.unregister() }
-            do { try service.register() }
-            catch {
-                // register can throw EPERM while successfully creating an approval request.
-                if service.status != .requiresApproval && service.status != .enabled {
+            if service.status == .notFound { try? await service.unregister() }
+            for attempt in 0..<5 {
+                do { try service.register(); break }
+                catch {
+                    if service.status == .requiresApproval || service.status == .enabled { break }
+                    let failure = error as NSError
+                    if failure.domain == SMAppServiceErrorDomain && failure.code == 1 && attempt < 4 {
+                        try? await Task.sleep(for: .milliseconds(250 * (1 << attempt)))
+                        continue
+                    }
                     failures.append("\(name): \(error.localizedDescription)")
+                    break
                 }
             }
             needsApproval = needsApproval || service.status == .requiresApproval
@@ -218,7 +240,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
                 for service in services where service.status != .notRegistered && service.status != .notFound {
                     try await service.unregister()
                 }
-                registerServices()
+                await registerCurrentServices()
             } catch { self.error = error.localizedDescription }
         }
     }

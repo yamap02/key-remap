@@ -13,6 +13,8 @@ import ReKeyModel
     var lastApp = ""
     var lastSource = ""
     var lastSecure = true
+    var viewerLease = ViewerLease()
+    var viewerRequestInFlight = false
     var busy = false
     var store = ConfigurationStore()
     var processes: [Process] = []
@@ -68,11 +70,11 @@ import ReKeyModel
         if connection == nil {
             let c = NSXPCConnection(machServiceName: "jp.example.rekey.core", options: .privileged)
             c.remoteObjectInterface = NSXPCInterface(with: ReKeyControl.self)
-            c.invalidationHandler = { @Sendable [weak self] in Task { @MainActor in self?.connection = nil; self?.busy = false } }
-            c.interruptionHandler = { @Sendable [weak self] in Task { @MainActor in self?.busy = false } }
+            c.invalidationHandler = { @Sendable [weak self] in Task { @MainActor in self?.connection = nil; self?.busy = false; self?.viewerLease.update(requested: false); self?.viewerRequestInFlight = false } }
+            c.interruptionHandler = { @Sendable [weak self] in Task { @MainActor in self?.busy = false; self?.viewerLease.update(requested: false); self?.viewerRequestInFlight = false } }
             c.resume(); connection = c
         }
-        return connection?.remoteObjectProxyWithErrorHandler { @Sendable [weak self] _ in Task { @MainActor in self?.busy = false } } as? ReKeyControl
+        return connection?.remoteObjectProxyWithErrorHandler { @Sendable [weak self] _ in Task { @MainActor in self?.busy = false; self?.viewerLease.update(requested: false); self?.viewerRequestInFlight = false } } as? ReKeyControl
     }
     func tick() {
         let app = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
@@ -80,7 +82,7 @@ import ReKeyModel
         let source = TISGetInputSourceProperty(ref, kTISPropertyInputSourceID).map { Unmanaged<CFString>.fromOpaque($0).takeUnretainedValue() as String } ?? ""
         var secure = true
         let accessibility = AXIsProcessTrusted()
-        if accessibility {
+        if accessibility && viewerLease.allowsFocusInspection() {
             var focused: CFTypeRef?
             if AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(), "AXFocusedUIElement" as CFString, &focused) == .success, let focused {
                 let element = unsafeDowncast(focused, to: AXUIElement.self)
@@ -99,6 +101,16 @@ import ReKeyModel
         devicePoll += 1
         if app != lastApp || devicePoll % 10 == 0 { automaticProfile(app: app) }
         let remote = proxy()
+        if !viewerRequestInFlight, let remote {
+            viewerRequestInFlight = true
+            remote.viewerRequested { [weak self] requested in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.viewerRequestInFlight = false
+                    self.viewerLease.update(requested: requested)
+                }
+            }
+        }
         remote?.context(app: app, inputSource: source, secure: secure, accessibility: accessibility) { _ in }
         lastApp = app; lastSource = source; lastSecure = secure
         processes.removeAll { !$0.isRunning }

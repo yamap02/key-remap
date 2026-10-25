@@ -1,6 +1,6 @@
 # ReKey
 
-macOS 27 / Apple Silicon 向けのメニューバー型キーリマッパー。Swift 6 / SwiftUI の設定アプリ、ユーザー権限の Agent、C++23 の入力コアと仮想 HID ブリッジで構成します。
+macOS 27 / Apple Silicon 向けのメニューバー型キーリマッパー。Swift 6 / SwiftUI の設定アプリ、ユーザー権限の Agent、仮想 HID 出力を統合した C++23 の入力コアで構成します。
 
 **現在は開発版です。管理者インストール、root サービスの起動、仮想 HID 接続を確認済みで、物理入力・出力の検証を進めています。出荷版の完成や遅延目標の達成を示すものではありません。**
 
@@ -20,7 +20,7 @@ scripts/build-app.sh
 open build/ReKey.app
 ```
 
-`build/ReKey.app` に UI、Agent、`rekey-core`、`rekey-vhid`、`rekey-bench` と SMAppService 用 plist が入ります。開発用には ad-hoc 署名を使います。app の起動だけでは物理キーボードを占有しません。
+`build/ReKey.app` に UI、Agent、`rekey-core`、`rekey-bench` と SMAppService 用 plist が入ります。開発用には ad-hoc 署名を使います。app の起動だけでは物理キーボードを占有しません。
 
 ```sh
 scripts/build-pkg.sh
@@ -34,15 +34,17 @@ open build/ReKey-0.1.0.pkg
 1. 開発用 pkg をインストールする。管理者認証は Mac の認証画面で行う。
 2. `/Applications/ReKey.app` を起動し、「権限」から入力サービスを登録する。
 3. システム設定で ReKey のバックグラウンド項目を許可する。公式の仮想 HID ドライバがインストール済みなら、共有の `Karabiner-VirtualHIDDevice-Daemon` も登録する。ドライバ拡張が有効でも、このデーモンが停止していると接続できない。
-4. 入力監視では `/Applications/ReKey.app/Contents/Library/HelperTools/rekey-core` のみ、Device Control and Data Access（アクセシビリティ）では ReKeyAgent のみを許可する。入力監視の「確認する」は Core 自身から権限を要求し、Finder で `rekey-core` を選択する。リストに見つからなければシステム設定の「＋」からそのファイルを追加し、オンにした後「入力サービスを再起動」を押す。設定アプリ ReKey だけに許可しても Core には反映されない。実機では root Core の取得にも入力監視が必要。
+4. 入力監視では `/Applications/ReKey.app/Contents/Library/HelperTools/rekey-core` のみ許可する。EventViewer を使う場合に限り、Device Control and Data Access（アクセシビリティ）では ReKeyAgent のみを許可する。入力監視の「確認する」は Core 自身から権限を要求し、Finder で `rekey-core` を選択する。リストに見つからなければシステム設定の「＋」からそのファイルを追加し、オンにした後「入力サービスを再起動」を押す。設定アプリ ReKey だけに許可しても Core には反映されない。実機では root Core の取得にも入力監視が必要。
 5. 既存の Karabiner-Elements を停止してからリマップを再開する。ReKey は Karabiner の入力サービスを検出すると占有しない。
 6. 単純リマップを一つ設定し、EventViewer とテキスト欄で押下・解放を確認する。
 
 開発用出力は、承認・起動済みの `Karabiner-DriverKit-VirtualHIDDevice` サービスに接続します。単独ドライバの公式署名・公証済みパッケージ `Vendor/VirtualHID/dist/Karabiner-DriverKit-VirtualHIDDevice-8.6.0.pkg` を使用でき、Karabiner-Elements 本体は不要です。ドライバ拡張自体の版は1.8.0です。サブモジュールは `ac836ed8a974cd5182495251855cabdb762f50cb` に固定しています。仮想キーボードの ready 通知を待って接続済みと表示します。ReKey は同リポジトリの公式 launchd plist を同梱し、SMAppService で接続用デーモンを登録します。共有サービスのため、ReKey の入力サービス解除・アンインストールではこの登録を解除しません。ReKey 固有の dext は未提供です。第三者の署名や provisioning profile を使用して再署名することはありません。
 
-旧版から更新する場合は、UI・Agent・Core を同時に更新して再起動した後、ReKey の両権限と ReKeyAgent の入力監視をシステム設定でオフにできます。設定画面は Core の入力監視と Agent が報告するアクセシビリティの状態を表示します。Agent が未許可・停止・応答切れの場合、EventViewer は入力表示を抑止します。通知の許可は `notify` アクションを実行するときに要求します。
+旧版から更新する場合は、UI・Agent・Core を同時に更新して再起動した後、ReKey の両権限と ReKeyAgent の入力監視をシステム設定でオフにできます。設定画面は Core の入力監視と Agent が報告するアクセシビリティの状態を表示します。Agent が未許可・停止・応答切れの場合、EventViewer は入力表示を抑止します。通常のリマップには Agent のアクセシビリティは不要です。EventViewer の「アクセスを許可」から必要なときだけ要求できます。入力欄の AX 確認は EventViewer 表示中だけ行います。一度付与した OS の許可は自動解除されないため、不要ならシステム設定でオフにできます。通知の許可は `notify` アクションを実行するときに要求します。
 
 開発用 ad-hoc 署名は更新でハッシュが変わるため、入力監視の項目を追加し直す必要がある場合があります。登録済みでも更新後のヘルパーが起動しない場合は、システム設定の ReKey バックグラウンド項目をオフ→オンにすると署名登録が更新されます。OS の認証画面は利用者が認証してください。
+
+旧 `rekey-vhid` は Core に統合しました。更新用 pkg は置換前に旧 Core / VHID を停止し、更新後 UI が旧 VHID 登録を解除します。「入力サービスを再起動」で現行 Core と Agent を登録してください。旧 VHID の plist は解除用にのみ同梱し、実行ファイルは配布しません。
 
 ## 設定と動作
 

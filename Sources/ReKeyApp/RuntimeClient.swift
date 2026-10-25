@@ -87,6 +87,10 @@ struct TraceEvent: Decodable, Identifiable, Sendable {
         (connection?.remoteObjectProxyWithErrorHandler { @Sendable _ in } as? ReKeyControl)?.reload { _ in }
     }
     func shutdown() { (connection?.remoteObjectProxyWithErrorHandler { @Sendable _ in } as? ReKeyControl)?.lifecycle(active: false) { _ in } }
+    func suspendViewer() {
+        events.removeAll()
+        (connection?.remoteObjectProxyWithErrorHandler { @Sendable _ in } as? ReKeyControl)?.events(enabled: false) { _ in }
+    }
     func stopViewer() {
         viewing = false; events.removeAll()
         (connection?.remoteObjectProxyWithErrorHandler { @Sendable _ in } as? ReKeyControl)?.events(enabled: false) { _ in }

@@ -201,3 +201,8 @@
 "入力サービスを再起動" = "入力サービスを再起動";
 "rekey-core のみ許可してください。場所は /Applications/ReKey.app/Contents/Library/HelperTools/rekey-core です。Finder で選択された rekey-core をシステム設定の入力監視リストに追加し、オンにしてください。許可後に「入力サービスを再起動」を押してください。" = "rekey-core のみ許可してください。場所は /Applications/ReKey.app/Contents/Library/HelperTools/rekey-core です。Finder で選択された rekey-core をシステム設定の入力監視リストに追加し、オンにしてください。許可後に「入力サービスを再起動」を押してください。";
 "開発版は Karabiner の公開ドライバを利用します。「確認する」で接続用デーモンも登録します。バックグラウンド項目とドライバ拡張を許可してください。" = "開発版は Karabiner の公開ドライバを利用します。「確認する」で接続用デーモンも登録します。バックグラウンド項目とドライバ拡張を許可してください。";
+"EventViewer 使用時のみ必要" = "EventViewer 使用時のみ必要";
+"通常のリマップには不要です。EventViewer のパスワード欄確認にのみ使用します。必要な場合は ReKeyAgent のみ許可してください。ReKey の許可は不要です。" = "通常のリマップには不要です。EventViewer のパスワード欄確認にのみ使用します。必要な場合は ReKeyAgent のみ許可してください。ReKey の許可は不要です。";
+"rekey-core が入力の取得・変換・仮想 HID 出力を行います。root サービスは1つです。ReKeyAgent はユーザー権限で動作します。" = "rekey-core が入力の取得・変換・仮想 HID 出力を行います。root サービスは1つです。ReKeyAgent はユーザー権限で動作します。";
+"通常のリマップにはアクセシビリティは不要です。EventViewer では ReKeyAgent による入力欄の安全確認が必要です。" = "通常のリマップにはアクセシビリティは不要です。EventViewer では ReKeyAgent による入力欄の安全確認が必要です。";
+"EventViewer のアクセスを許可" = "EventViewer のアクセスを許可";
