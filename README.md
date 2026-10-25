@@ -8,6 +8,7 @@ macOS 27 / Apple Silicon 向けのメニューバー型キーリマッパー。S
 
 権限と常駐プロセスの削減可否は [実現性レポート](docs/permission-process-assessment-ja.md) にまとめています。
 統合後の実装と確認範囲は [実装・検証記録](docs/consolidated-service-validation-ja.md) にあります。
+統合後にさらに削減できる範囲は [追加削減レポート](docs/further-minimization-ja.md) にあります。
 
 ## ビルドとテスト
 
