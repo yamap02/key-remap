@@ -76,6 +76,12 @@ struct TraceEvent: Decodable, Identifiable, Sendable {
             }
         }
     }
+    func requestInputMonitoring() {
+        connect()
+        (connection?.remoteObjectProxyWithErrorHandler { @Sendable _ in } as? ReKeyControl)?.requestInputMonitoring { [weak self] _ in
+            Task { @MainActor in self?.refresh() }
+        }
+    }
     func reloadConfiguration() {
         connect()
         (connection?.remoteObjectProxyWithErrorHandler { @Sendable _ in } as? ReKeyControl)?.reload { _ in }

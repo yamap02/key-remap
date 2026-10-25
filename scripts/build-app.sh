@@ -33,6 +33,7 @@ if [[ -f build/rekey-core ]]; then
   cp build/rekey-core build/rekey-vhid build/rekey-bench "$app/Contents/Library/HelperTools/"
   rm -f "$app/Contents/Library/LaunchDaemons/jp.example.rekey.agent.plist"
   cp Resources/jp.example.rekey.core.plist Resources/jp.example.rekey.vhid.plist "$app/Contents/Library/LaunchDaemons/"
+  cp Vendor/VirtualHID/files/LaunchDaemons/org.pqrs.service.daemon.Karabiner-VirtualHIDDevice-Daemon.plist "$app/Contents/Library/LaunchDaemons/"
   codesign --force --sign "${REKEY_SIGNING_IDENTITY:--}" "$app/Contents/Library/HelperTools/rekey-core"
   codesign --force --sign "${REKEY_SIGNING_IDENTITY:--}" "$app/Contents/Library/HelperTools/rekey-vhid"
   codesign --force --sign "${REKEY_SIGNING_IDENTITY:--}" "$app/Contents/Library/HelperTools/rekey-bench"

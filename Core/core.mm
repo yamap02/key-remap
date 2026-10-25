@@ -131,6 +131,16 @@ bool allowed(uid_t caller,bool require_owner){uid_t console=0;gid_t gid;CFString
 @interface Control : NSObject <ReKeyControl>
 @end
 @implementation Control
+- (void)requestInputMonitoringWithReply:(void (^)(BOOL))reply {
+    uid_t caller=[NSXPCConnection currentConnection].effectiveUserIdentifier;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if(!allowed(caller,false)){reply(NO);return;}
+        // Request from the process that opens keyboards, never from the settings UI.
+        IOHIDRequestAccess(kIOHIDRequestTypeListenEvent);
+        core->input_monitoring=IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)==kIOHIDAccessTypeGranted;
+        reply(core->input_monitoring);
+    });
+}
 - (void)lifecycleWithActive:(BOOL)active reply:(void (^)(BOOL))reply {
     uid_t caller=[NSXPCConnection currentConnection].effectiveUserIdentifier;
     dispatch_async(dispatch_get_main_queue(), ^{if(!allowed(caller,false)){reply(NO);return;}core->ui_deadline=active?now_ms()+5000:0;if(!active&&core->config.is_object()&&core->config.at("global").value("disable_on_quit",true))core->stop();reply(YES);});

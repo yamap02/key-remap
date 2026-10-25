@@ -31,12 +31,12 @@ open build/ReKey-0.1.0.pkg
 
 1. 開発用 pkg をインストールする。管理者認証は Mac の認証画面で行う。
 2. `/Applications/ReKey.app` を起動し、「権限」から入力サービスを登録する。
-3. システム設定で ReKey のバックグラウンド項目を許可する。
-4. 入力監視では `/Applications/ReKey.app/Contents/Library/HelperTools/rekey-core` のみ、Device Control and Data Access（アクセシビリティ）では ReKeyAgent のみを許可する。設定アプリ ReKey の両権限と、ReKeyAgent の入力監視は不要。実機では root Core の取得にも入力監視が必要。
+3. システム設定で ReKey のバックグラウンド項目を許可する。公式の仮想 HID ドライバがインストール済みなら、共有の `Karabiner-VirtualHIDDevice-Daemon` も登録する。ドライバ拡張が有効でも、このデーモンが停止していると接続できない。
+4. 入力監視では `/Applications/ReKey.app/Contents/Library/HelperTools/rekey-core` のみ、Device Control and Data Access（アクセシビリティ）では ReKeyAgent のみを許可する。入力監視の「確認する」は Core 自身から権限を要求し、Finder で `rekey-core` を選択する。リストに見つからなければシステム設定の「＋」からそのファイルを追加し、オンにした後「入力サービスを再起動」を押す。設定アプリ ReKey だけに許可しても Core には反映されない。実機では root Core の取得にも入力監視が必要。
 5. 既存の Karabiner-Elements を停止してからリマップを再開する。ReKey は Karabiner の入力サービスを検出すると占有しない。
 6. 単純リマップを一つ設定し、EventViewer とテキスト欄で押下・解放を確認する。
 
-開発用出力は、承認・起動済みの `Karabiner-DriverKit-VirtualHIDDevice` サービスに接続します。単独ドライバの公式署名・公証済みパッケージ `Vendor/VirtualHID/dist/Karabiner-DriverKit-VirtualHIDDevice-8.6.0.pkg` を使用でき、Karabiner-Elements 本体は不要です。ドライバ拡張自体の版は1.8.0です。サブモジュールは `ac836ed8a974cd5182495251855cabdb762f50cb` に固定しています。仮想キーボードの ready 通知を待って接続済みと表示します。ReKey 固有の dext は未提供です。第三者の署名や provisioning profile を使用して再署名することはありません。
+開発用出力は、承認・起動済みの `Karabiner-DriverKit-VirtualHIDDevice` サービスに接続します。単独ドライバの公式署名・公証済みパッケージ `Vendor/VirtualHID/dist/Karabiner-DriverKit-VirtualHIDDevice-8.6.0.pkg` を使用でき、Karabiner-Elements 本体は不要です。ドライバ拡張自体の版は1.8.0です。サブモジュールは `ac836ed8a974cd5182495251855cabdb762f50cb` に固定しています。仮想キーボードの ready 通知を待って接続済みと表示します。ReKey は同リポジトリの公式 launchd plist を同梱し、SMAppService で接続用デーモンを登録します。共有サービスのため、ReKey の入力サービス解除・アンインストールではこの登録を解除しません。ReKey 固有の dext は未提供です。第三者の署名や provisioning profile を使用して再署名することはありません。
 
 旧版から更新する場合は、UI・Agent・Core を同時に更新して再起動した後、ReKey の両権限と ReKeyAgent の入力監視をシステム設定でオフにできます。設定画面は Core の入力監視と Agent が報告するアクセシビリティの状態を表示します。Agent が未許可・停止・応答切れの場合、EventViewer は入力表示を抑止します。通知の許可は `notify` アクションを実行するときに要求します。
 

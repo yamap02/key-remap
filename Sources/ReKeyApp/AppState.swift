@@ -163,12 +163,29 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     func openPrivacy(_ section: String) { if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(section)") { NSWorkspace.shared.open(url) } }
     func requestAgentPermissions() { DistributedNotificationCenter.default().postNotificationName(NSNotification.Name("jp.example.rekey.agent.request-permissions"), object: nil, userInfo: nil, deliverImmediately: true) }
     func requestAccessibility() { requestAgentPermissions() }
+    func requestInputMonitoring() {
+        runtime.requestInputMonitoring()
+        openPrivacy("Privacy_ListenEvent")
+        let core = Bundle.main.bundleURL.appendingPathComponent("Contents/Library/HelperTools/rekey-core")
+        NSWorkspace.shared.activateFileViewerSelecting([core])
+    }
+    private let driverDaemonPath = "/Library/Application Support/org.pqrs/Karabiner-DriverKit-VirtualHIDDevice/Applications/Karabiner-VirtualHIDDevice-Daemon.app/Contents/MacOS/Karabiner-VirtualHIDDevice-Daemon"
+    func setupDriver() {
+        guard FileManager.default.isExecutableFile(atPath: driverDaemonPath) else {
+            error = "Karabiner の仮想 HID ドライバをインストールしてください。README のセットアップ手順を確認してください。"
+            return
+        }
+        registerServices()
+    }
     func registerServices() {
-        let services = [
+        var services = [
             ("rekey-vhid", SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist")),
             ("rekey-core", SMAppService.daemon(plistName: "jp.example.rekey.core.plist")),
             ("ReKey Agent", SMAppService.agent(plistName: "jp.example.rekey.agent.plist"))
         ]
+        if FileManager.default.isExecutableFile(atPath: driverDaemonPath) {
+            services.insert(("Virtual HID Daemon", SMAppService.daemon(plistName: "org.pqrs.service.daemon.Karabiner-VirtualHIDDevice-Daemon.plist")), at: 0)
+        }
         var failures: [String] = []
         var needsApproval = false
         for (name, service) in services {
@@ -189,8 +206,13 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         if needsApproval { SMAppService.openSystemSettingsLoginItems() }
     }
     private func stopServices() throws {
+        // The official Virtual HID daemon is shared with other clients; keep it registered.
         let services = [SMAppService.daemon(plistName: "jp.example.rekey.core.plist"), SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist"), SMAppService.agent(plistName: "jp.example.rekey.agent.plist")]
         for service in services where service.status != .notRegistered && service.status != .notFound { try service.unregister() }
+    }
+    func restartServices() {
+        do { try stopServices(); registerServices() }
+        catch { self.error = error.localizedDescription }
     }
     func unregisterServices() {
         do { try stopServices(); refreshSystem() }

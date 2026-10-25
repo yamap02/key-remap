@@ -198,3 +198,6 @@
 "ReKeyAgent の権限と接続を確認してください" = "Check ReKeyAgent access and connection";
 "入力監視 — Core がキーボード入力を取得" = "Input Monitoring — Core captures keyboard input";
 "アクセシビリティ — Agent が入力欄の安全を確認" = "Accessibility — Agent checks input field safety";
+"入力サービスを再起動" = "Restart input services";
+"rekey-core のみ許可してください。場所は /Applications/ReKey.app/Contents/Library/HelperTools/rekey-core です。Finder で選択された rekey-core をシステム設定の入力監視リストに追加し、オンにしてください。許可後に「入力サービスを再起動」を押してください。" = "Allow rekey-core at /Applications/ReKey.app/Contents/Library/HelperTools/rekey-core. Add the file selected in Finder to Input Monitoring, turn it on, then click “Restart input services”.";
+"開発版は Karabiner の公開ドライバを利用します。「確認する」で接続用デーモンも登録します。バックグラウンド項目とドライバ拡張を許可してください。" = "This build uses the public Karabiner driver. “Check” also registers its connection daemon. Allow its background activity and driver extension.";

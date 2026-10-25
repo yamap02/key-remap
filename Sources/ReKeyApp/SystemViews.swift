@@ -95,11 +95,11 @@ struct PermissionsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Text("入力を扱うために、必要なアクセスを確認します。").foregroundStyle(.secondary)
-                permission("入力監視", icon: "waveform.path", status: state.inputMonitoringReady ? "許可済み" : "未許可", ready: state.inputMonitoringReady, description: "rekey-core のみ許可してください。場所は /Applications/ReKey.app/Contents/Library/HelperTools/rekey-core です。ReKey と ReKeyAgent の入力監視は不要です。") { state.openPrivacy("Privacy_ListenEvent") }
+                permission("入力監視", icon: "waveform.path", status: state.inputMonitoringReady ? "許可済み" : "未許可", ready: state.inputMonitoringReady, description: "rekey-core のみ許可してください。場所は /Applications/ReKey.app/Contents/Library/HelperTools/rekey-core です。Finder で選択された rekey-core をシステム設定の入力監視リストに追加し、オンにしてください。許可後に「入力サービスを再起動」を押してください。") { state.requestInputMonitoring() }
                 permission("アクセシビリティ", icon: "accessibility", status: state.accessibility ? "許可済み" : "未許可", ready: state.accessibility, description: "ReKeyAgent のみ許可してください。セキュアな入力欄の確認に使用します。ReKey の許可は不要です。") { state.requestAccessibility(); state.openPrivacy("Privacy_Accessibility") }
-                permission("仮想 HID ドライバ", icon: "puzzlepiece.extension", status: state.driverActive ? "接続済み（評価用）" : "未接続", ready: state.driverActive, description: "開発版は Karabiner の公開ドライバを利用します。ReKey 固有の DriverKit 拡張は署名と entitlement の取得が必要です。") { if let u = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") { NSWorkspace.shared.open(u) } }
+                permission("仮想 HID ドライバ", icon: "puzzlepiece.extension", status: state.driverActive ? "接続済み（評価用）" : "未接続", ready: state.driverActive, description: "開発版は Karabiner の公開ドライバを利用します。「確認する」で接続用デーモンも登録します。バックグラウンド項目とドライバ拡張を許可してください。") { state.setupDriver() }
                 permission("入力サービス", icon: "gearshape.2", status: state.daemonStatus, ready: state.daemonStatus == "稼働中", description: "rekey-core / rekey-vhid が root 権限で入力の取得と出力を行います。ビルドしたサービスを登録する必要があります。") { if let u = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") { NSWorkspace.shared.open(u) } }
-                HStack { Button("入力サービスを登録") { state.registerServices() }; Button("登録を解除") { state.unregisterServices() } }
+                HStack { Button("入力サービスを登録") { state.registerServices() }; Button("登録を解除") { state.unregisterServices() }; Button("入力サービスを再起動") { state.restartServices() } }
                 if let runtimeError = state.runtime.status?.error, !runtimeError.isEmpty { Text(runtimeError).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
                 GroupBox {
                     Label("Karabiner と同時にキーボードを占有しないでください。既存のリマッパーが稼働している場合、ReKey は自動的に入力を奪いません。", systemImage: "info.circle").font(.callout).foregroundStyle(.secondary).padding(8)
