@@ -211,8 +211,16 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         for service in services where service.status != .notRegistered && service.status != .notFound { try service.unregister() }
     }
     func restartServices() {
-        do { try stopServices(); registerServices() }
-        catch { self.error = error.localizedDescription }
+        Task {
+            do {
+                let services = [SMAppService.daemon(plistName: "jp.example.rekey.core.plist"), SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist"), SMAppService.agent(plistName: "jp.example.rekey.agent.plist")]
+                // The async overload waits for the old process to exit before re-registering.
+                for service in services where service.status != .notRegistered && service.status != .notFound {
+                    try await service.unregister()
+                }
+                registerServices()
+            } catch { self.error = error.localizedDescription }
+        }
     }
     func unregisterServices() {
         do { try stopServices(); refreshSystem() }
