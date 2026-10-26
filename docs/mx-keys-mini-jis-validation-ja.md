@@ -26,6 +26,6 @@ HID usage の参照元: [USB-IF HID Usage Tables](https://www.usb.org/sites/defa
 
 `/Applications/ReKey.app` は build 8 に更新済み。厳密な署名検証に成功し、候補アプリの全18ファイルと SHA-256 が一致した（`build/mx-jis-install-verification.json`）。UI を新しいプロセスで起動した。
 
-更新後の Core / Agent は launchd の登録に親 bundle version 8 が反映されたが、起動時に EX_CONFIG（78）となった。バックグラウンド項目のオフ→オンで署名登録を更新する操作を開始し、システム設定の Touch ID 認証待ち。入力監視の実効状態、サービス再起動、物理キーの入力コードと変換結果はまだ未確認。
+更新後の Core / Agent は launchd 登録に build 8 が反映されたが、最初は EX_CONFIG（78）で起動できなかった。システム設定の ReKey バックグラウンド項目をオフ→オンにして復帰。入力監視は旧 Core 項目のオン／オフだけでは実効許可が復帰せず、旧項目を削除し、現在の `/Applications/ReKey.app/Contents/Library/HelperTools/rekey-core` を再追加した。その後サービスを再起動し、アプリ上で「入力監視 許可済み」「仮想 HID 接続済み」「入力サービス 稼働中」「リマップ有効」を確認した。OS の Touch ID 認証は利用者が実施した。Agent のアクセシビリティは追加許可せず、通常リマップに必要な Core の入力監視だけを復旧した。
 
-MX Keys Mini の該当キーを Return にしたい場合は、更新後に対象デバイスの変更前を「カタカナ／ひらがな／ローマ字（JIS）」、変更後を Return にする。現在の「かな」→ Return 設定を別キーへ黙って書き換えることはしない。
+MX Keys Mini の既存「かな → Return」に合わせ、「カタカナ／ひらがな／ローマ字（JIS）」→ Return を GUI から追加した。既存6件のマッピングは保持し、対象デバイスの7件目として保存されていることを確認。インストール済み Core の `--validate` も成功。物理キーの動作は TextEdit で利用者に確認中で、実際の HID 入力コードはまだ観測していない。
