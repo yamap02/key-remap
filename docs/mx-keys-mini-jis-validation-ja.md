@@ -24,6 +24,8 @@ HID usage の参照元: [USB-IF HID Usage Tables](https://www.usb.org/sites/defa
 
 ## 実機への反映
 
-更新インストーラを開き、管理者認証待ち。`/Applications/ReKey.app` の更新・ハッシュ一致、更新後の権限とサービス再起動、物理キーの入力コードと変換結果はまだ未確認。
+`/Applications/ReKey.app` は build 8 に更新済み。厳密な署名検証に成功し、候補アプリの全18ファイルと SHA-256 が一致した（`build/mx-jis-install-verification.json`）。UI を新しいプロセスで起動した。
+
+更新後の Core / Agent は launchd の登録に親 bundle version 8 が反映されたが、起動時に EX_CONFIG（78）となった。バックグラウンド項目のオフ→オンで署名登録を更新する操作を開始し、システム設定の Touch ID 認証待ち。入力監視の実効状態、サービス再起動、物理キーの入力コードと変換結果はまだ未確認。
 
 MX Keys Mini の該当キーを Return にしたい場合は、更新後に対象デバイスの変更前を「カタカナ／ひらがな／ローマ字（JIS）」、変更後を Return にする。現在の「かな」→ Return 設定を別キーへ黙って書き換えることはしない。
