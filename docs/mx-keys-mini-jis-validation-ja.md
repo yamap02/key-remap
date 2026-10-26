@@ -28,4 +28,4 @@ HID usage の参照元: [USB-IF HID Usage Tables](https://www.usb.org/sites/defa
 
 更新後の Core / Agent は launchd 登録に build 8 が反映されたが、最初は EX_CONFIG（78）で起動できなかった。システム設定の ReKey バックグラウンド項目をオフ→オンにして復帰。入力監視は旧 Core 項目のオン／オフだけでは実効許可が復帰せず、旧項目を削除し、現在の `/Applications/ReKey.app/Contents/Library/HelperTools/rekey-core` を再追加した。その後サービスを再起動し、アプリ上で「入力監視 許可済み」「仮想 HID 接続済み」「入力サービス 稼働中」「リマップ有効」を確認した。OS の Touch ID 認証は利用者が実施した。Agent のアクセシビリティは追加許可せず、通常リマップに必要な Core の入力監視だけを復旧した。
 
-MX Keys Mini の既存「かな → Return」に合わせ、「カタカナ／ひらがな／ローマ字（JIS）」→ Return を GUI から追加した。既存6件のマッピングは保持し、対象デバイスの7件目として保存されていることを確認。インストール済み Core の `--validate` も成功。物理キーの動作は TextEdit で利用者に確認中で、実際の HID 入力コードはまだ観測していない。
+MX Keys Mini の既存「かな → Return」に合わせ、「カタカナ／ひらがな／ローマ字（JIS）」→ Return を GUI から追加した。既存6件のマッピングは保持し、対象デバイスの7件目として保存されていることを確認。インストール済み Core の `--validate` も成功。利用者が TextEdit の `TEST` 末尾で画像の物理キーだけを押し、「改行した」と報告した。Computer Use からもテキスト欄が `TEST` に続く改行を含む状態になったことを確認した。通常の Enter は押さない手順で確認した。EventViewer は使用していないため、生の HID 入力コード自体は観測していない。
