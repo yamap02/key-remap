@@ -19,7 +19,8 @@ inline const std::map<std::string, Key>& key_names() {
         const char* extra[]={"print_screen","scroll_lock","pause","insert","home","page_up","delete_forward","end","page_down","right_arrow","left_arrow","down_arrow","up_arrow","keypad_num_lock","keypad_slash","keypad_asterisk","keypad_hyphen","keypad_plus","keypad_enter","keypad_1","keypad_2","keypad_3","keypad_4","keypad_5","keypad_6","keypad_7","keypad_8","keypad_9","keypad_0","keypad_period","non_us_backslash","application","power","keypad_equal_sign"};
         for(int i=0;i<34;++i) v[extra[i]]=70+i;
         for(int i=13;i<=24;++i) v["f"+std::to_string(i)]=91+i;
-        v["international1"]=135;v["japanese_kana"]=144;v["japanese_eisuu"]=145;
+        for(int i=1;i<=5;++i) v["international"+std::to_string(i)]=134+i;
+        v["japanese_kana"]=144;v["japanese_eisuu"]=145;
         const char* mods[]={"left_control","left_shift","left_option","left_command","right_control","right_shift","right_option","right_command"};
         for(int i=0;i<8;++i) v[mods[i]]=224+i;
         v["mute"]=0xc00e2;v["volume_increment"]=0xc00e9;v["volume_decrement"]=0xc00ea;v["play_or_pause"]=0xc00cd;v["fastforward"]=0xc00b3;v["rewind"]=0xc00b4;v["display_brightness_increment"]=0xc006f;v["display_brightness_decrement"]=0xc0070;

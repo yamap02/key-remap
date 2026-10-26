@@ -20,6 +20,10 @@ int main() {
         reports.apply(key,false,sink);CHECK(sink.reports==before+2);
         reports.apply(key,false,sink);CHECK(sink.reports==before+2);
     }
+    for(auto key : {135u,136u,137u,138u,139u}) {
+        reports.apply(key,true,sink);CHECK(reports.keyboard.keys.exists(key));
+        reports.apply(key,false,sink);CHECK(!reports.keyboard.keys.exists(key));
+    }
     reports.apply(rekey::key("a"),true,sink);
     reports.apply(rekey::key("left_shift"),true,sink);
     reports.apply(rekey::key("mute"),true,sink);

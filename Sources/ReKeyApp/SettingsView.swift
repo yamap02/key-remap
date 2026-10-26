@@ -118,6 +118,7 @@ struct CaptureSheet: View {
             Image(systemName: "keyboard").font(.system(size: 42)).foregroundStyle(.tint)
             Text("割り当てるキーを押してください").font(.title3.bold())
             Text("修飾キー・英数・かなも入力できます。").foregroundStyle(.secondary)
+            Text("反応しない JIS キーは、キャンセルして「日本語・国際キー」から選択してください。").font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             KeyCaptureRepresentable { selection = $0; dismiss() }.frame(width: 1, height: 1)
             Button("キャンセル", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
         }.padding(40).frame(width: 430)

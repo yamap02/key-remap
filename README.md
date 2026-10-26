@@ -60,6 +60,7 @@ open build/ReKey-0.1.0.pkg
 - 緊急停止は物理 `⌃⌥⌘Esc` の 1 秒長押し。Core が全キーを解放し、物理キーボードの占有を解除する。
 - EventViewer は表示中に限り最大 2,000 行をメモリ上に保持。パスワード欄・Secure Event Input・Agent の監視切断時は表示を抑止し、閉じると破棄。
 - キーボード種別は OS/HID 情報で判定できない場合があるため、デバイス画面で ANSI/ISO/JIS を指定可能。
+- MX Keys Mini など Windows 兼用 JIS の「カタカナ／ひらがな／ローマ字」は「日本語・国際キー」→同名の項目（`international2`）を選択する。Mac の「かな」（`japanese_kana`）とは別キー。「変換」（`international4`）・「無変換」（`international5`）・「￥」（`international3`）・「ろ」（`international1`）も指定可能。OS によってキー録音へ通知されないキーはメニューから選択する。接続先やキーボードの OS モードで入力が異なる場合は EventViewer の HID コードで確認する。
 - 正規表現は C++ の ECMAScript 形式。UI の保存時にも同じ形式でコンパイルする。
 - `shell_command` は Agent のユーザー権限でのみ実行。インポート時はコマンドが含まれることを警告する。
 

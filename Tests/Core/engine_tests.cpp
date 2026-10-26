@@ -17,6 +17,23 @@ Engine engine(JSON c,Identity id={}){Engine e(Program::compile(c,id),id);e.updat
 void expect(const Outputs& out,std::initializer_list<std::pair<Key,bool>> expected,const char* msg){check(out.size==expected.size(),msg);size_t i=0;for(auto [k,d]:expected){check(out.values[i].key==k&&out.values[i].down==d,msg);++i;}}
 int main(){
     {
+        // Windows JIS conversion keys and Mac language keys are distinct inputs.
+        const char* jis[]={"international1","international2","international3","international4","international5","japanese_kana","japanese_eisuu"};
+        const Key usages[]={135,136,137,138,139,144,145};
+        for(size_t i=0;i<7;++i){
+            check(key(jis[i])==usages[i],"JIS physical HID usage");
+            auto c=base();c["profiles"][0]["simple"]={{{"from",{{"key",jis[i]}}},{"to",JSON::array({{{"key","return_or_enter"}}})}}};auto e=engine(c);
+            expect(e.process({usages[i],true,1}),{{40,true}},"JIS remap down");
+            expect(e.process({usages[i],false,2}),{{40,false}},"JIS remap up");
+            c["profiles"][0]["simple"]={{{"from",{{"key","a"}}},{"to",JSON::array({{{"key",jis[i]}}})}}};e=engine(c);
+            expect(e.process({4,true,1}),{{usages[i],true}},"JIS output down");
+            expect(e.process({4,false,2}),{{usages[i],false}},"JIS output up");
+        }
+        auto c=base();c["profiles"][0]["simple"]={{{"from",{{"key","international2"}}},{"to",JSON::array({{{"key","return_or_enter"}}})}}};auto e=engine(c);
+        expect(e.process({144,true,1}),{{144,true}},"Mac kana is not Windows JIS international2");
+        expect(e.process({144,false,2}),{{144,false}},"Mac kana passthrough release");
+    }
+    {
         auto c=base();c["profiles"][0]["simple"]={{{"from",{{"key","a"}}},{"to",JSON::array({{{"key","b"}}})}},{{"from",{{"key","b"}}},{"to",JSON::array({{{"key","c"}}})}}};auto e=engine(c);
         expect(e.process({4,true,1}),{{5,true}},"simple down, no recursion");expect(e.process({4,false,2}),{{5,false}},"simple up");
         c["profiles"][0]["rules"]={rule(basic("b","escape"))};e=engine(c);expect(e.process({4,true,1}),{{41,true}},"simple before complex");expect(e.process({4,false,2}),{{41,false}},"complex release");
