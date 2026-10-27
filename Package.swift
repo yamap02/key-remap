@@ -5,7 +5,7 @@ let package = Package(name: "ReKey", platforms: [.macOS("27.0")], products: [
     .library(name: "ReKeyModel", targets: ["ReKeyModel"]),
     .executable(name: "ReKeyAgent", targets: ["ReKeyAgent"])
 ], targets: [
-    .target(name: "ReKeyValidation", path: "CoreValidation", publicHeadersPath: "include", cxxSettings: [.headerSearchPath("../Core"), .headerSearchPath("../Vendor/VirtualHID/vendor/vendor/include")]),
+    .target(name: "ReKeyValidation", path: "CoreValidation", exclude: ["stuck_key_probe.cpp"], publicHeadersPath: "include", cxxSettings: [.headerSearchPath("../Core"), .headerSearchPath("../Vendor/VirtualHID/vendor/vendor/include")]),
     .target(name: "ReKeyModel", dependencies: ["ReKeyValidation"]),
     .target(name: "ReKeyIPC"),
     .executableTarget(name: "ReKeyAgent", dependencies: ["ReKeyModel", "ReKeyIPC"]),
