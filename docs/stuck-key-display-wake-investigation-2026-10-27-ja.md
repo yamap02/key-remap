@@ -100,3 +100,23 @@ ReKeyから入力サービスを再起動後、次を確認した。
 - launchd: Core（PID 88498）とAgent（PID 88499）が `running`、各1回起動、終了履歴なし。Coreの親bundle番号は15。
 
 実際の消灯・システムsleep、復帰入力、再点灯現象の改善確認は未実施。適用・権限設定・サービス起動の成功を、現象の解消確認とは区別する。
+
+## 適用後の再発と追加切り分け（2026-10-27）
+
+利用者からbuild 15でも改善しないとの報告を受けた。操作はターミナルで `pmset displaysleepnow` を実行し、約2秒後に再点灯するもの。
+
+- 20:18:43のpowerdログ: display Offの直後に `Display is asleep on activity tickle. Lets turn it on` が記録され、20:18:44にOnとなった。消灯そのものが拒否された状態ではない。ただしこのログだけでは、tickleの入力元やキーの押下・解放を特定できない。
+- Core / Agentは引き続き稼働していた。20:19時点のWindowServer活動記録には仮想キーボードが出ていたが、これは当該再点灯の原因を確定する証拠ではない。
+- エージェントが物理入力なしで `pmset displaysleepnow` を実行した条件では、20:20:21のOffから20:22:06のOnまで約105秒間、powerdにOnが記録されなかった。次の20:22:24のOffから20:22:43のOnまでにも約18秒の間隔があった。後半のOnはエージェントが計測後に `caffeinate -u -t 1` で画面を戻した操作を含むため、自然再点灯の証拠として扱わない。
+- 別の一時診断で `CGGetOnlineDisplayList` と `CGDisplayIsAsleep` は2台のディスプレイを検出し、両方の消灯状態を取得できた。一方、今回の消灯でIODisplayWranglerの通知もNSWorkspaceのscreens sleep/wake通知も一時診断には届かなかった。前回の「通知登録成功」は実到着の確認ではなく、build 15の消灯処理が実行されたとは確認できない。
+- 利用者に `sleep 2; pmset displaysleepnow` を実行してEnterをすぐ離す条件で比較してもらい、「再点灯しない」との結果を得た。
+
+この比較は、コマンドを実行するキー操作と消灯のタイミングが関係する可能性を支持する。入力の解放が消灯後に届いて起こす再点灯などが候補だが、物理入力と仮想出力の対応は未採取で、常時押下・キーリピートを確定したものではない。build 15で現象が解消したとは扱わない。
+
+確認できた回避手順は次のとおり。Enterを離す時間を確保してから消灯する。
+
+```sh
+sleep 2; pmset displaysleepnow
+```
+
+追加調査ログはローカルの `build/stuck-key-display-state-followup.log` に保存した。この追加調査ではアプリの再更新や設定変更は行っていない。
