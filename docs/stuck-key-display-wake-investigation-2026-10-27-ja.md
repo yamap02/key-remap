@@ -85,3 +85,18 @@ xcrun clang++ -std=c++23 -O2 -ICore \
 - 実機で消灯・sleep通知の登録のみを行う一時診断: `system registration=1 display registration=1`。通知の実到着やリセットのOS反映を確認する試験ではない。
 
 インストール済みアプリの更新、実際の消灯・スリープ操作、再点灯現象の再現試験は実施していない。原因確定に必要な実機比較は引き続き上記の手順を使う。通知登録が失敗した場合はシステムログに記録するが、その経路の解放処理は利用できない。
+
+## 修正版の適用・権限設定（2026-10-27、上記検証後）
+
+利用者の依頼により、`32a7f5e` の候補アプリを `build/ReKey-stuck-key-fix.pkg` にまとめ、macOS Installerで `/Applications/ReKey.app` に適用した。build番号は15。Installerの成功表示、root:wheel所有、`codesign --verify --deep --strict` の成功を確認した。
+
+UI・Agent・CoreそれぞれのSHA-256は候補とインストール先で一致した。Coreは `c25adac846f8ca42f39c3480c808c75f529848c12c7f7bf444b7945eb59e78d0`。比較結果はローカルの `build/stuck-key-install-verification.json` に保存した。
+
+更新直後はバックグラウンド登録が古い署名を参照し、CoreとAgentが `EX_CONFIG` で起動できなかった。システム設定でReKeyのバックグラウンド項目をオフ→オンにして更新した。Coreの入力監視とAgentのアクセシビリティも古い項目を削除し、現在のインストール先ファイルで追加し直した。管理者認証とシステム設定のTouch ID認証は利用者が実施した。
+
+ReKeyから入力サービスを再起動後、次を確認した。
+
+- ReKey画面: 「リマップ有効」「入力監視 許可済み」「アクセシビリティ 許可済み」「仮想 HID ドライバ 接続済み（評価用）」「入力サービス 稼働中」。アクセシビリティはAgentからの実行時報告に基づく。
+- launchd: Core（PID 88498）とAgent（PID 88499）が `running`、各1回起動、終了履歴なし。Coreの親bundle番号は15。
+
+実際の消灯・システムsleep、復帰入力、再点灯現象の改善確認は未実施。適用・権限設定・サービス起動の成功を、現象の解消確認とは区別する。
