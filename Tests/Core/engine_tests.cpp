@@ -1,4 +1,5 @@
 #include "Engine.hpp"
+#include "PowerState.hpp"
 #include <iostream>
 #include <cstdlib>
 #include <chrono>
@@ -16,6 +17,37 @@ JSON basic(std::string from,std::string to){return {{"type","basic"},{"from",{{"
 Engine engine(JSON c,Identity id={}){Engine e(Program::compile(c,id),id);e.update_context({});return e;}
 void expect(const Outputs& out,std::initializer_list<std::pair<Key,bool>> expected,const char* msg){check(out.size==expected.size(),msg);size_t i=0;for(auto [k,d]:expected){check(out.values[i].key==k&&out.values[i].down==d,msg);++i;}}
 int main(){
+    {
+        // Missing release across display/system sleep must not survive recovery.
+        auto c=base();c["profiles"][0]["simple"]={{{"from",{{"key","international2"}}},{"to",JSON::array({{{"key","return_or_enter"}}})}}};
+        for(bool display_first:{false,true}){
+            auto e=engine(c);PowerState power;
+            expect(e.process({136,true,1}),{{40,true}},"wake regression Return down");
+            expect(e.tick(60001),{},"ordinary long hold is preserved");
+            check(display_first?power.display(true):power.system(true),"first sleep notification changes state");
+            check(power.suspended(),"capture blocked before reset");
+            expect(e.release_all(60002),{{40,false}},"power transition releases missing up");
+            check(display_first?power.system(true):power.display(true),"second sleep source changes state");
+            expect(e.release_all(60003),{},"overlapping resets have no extra output");
+            check(!power.display(true)&&!power.system(true),"duplicate sleep is idempotent");
+            check(display_first?power.display(false):power.system(false),"first wake changes state");
+            check(power.suspended(),"one awake source cannot resume capture");
+            check(display_first?power.system(false):power.display(false),"second wake changes state");
+            check(!power.suspended(),"capture resumes after both wake");
+            check(!power.display(false)&&!power.system(false),"duplicate wake is idempotent");
+            expect(e.process({136,false,60004}),{},"late physical release cannot emit a tap");
+            expect(e.process({136,true,60005}),{{40,true}},"fresh press works after wake");
+            expect(e.process({136,false,60006}),{{40,false}},"fresh release works after wake");
+        }
+        auto e=engine(base());
+        e.process({224,true,1});e.process({226,true,2});e.process({227,true,3});e.process({41,true,4});
+        e.release_all(5);
+        expect(e.tick(2000),{},"power reset cancels emergency hold timer");
+        check(!e.paused(),"old emergency chord does not pause after wake");
+        PowerState power;
+        check(power.display(true)&&power.suspended(),"display-only sleep blocks capture");
+        check(power.display(false)&&!power.suspended(),"display-only wake resumes capture");
+    }
     {
         // Windows JIS conversion keys and Mac language keys are distinct inputs.
         const char* jis[]={"international1","international2","international3","international4","international5","japanese_kana","japanese_eisuu"};

@@ -188,7 +188,7 @@ public:
             default:continue;
         }if(hit==c.unless){r.context_enabled=false;break;}}}
     }
-    Outputs release_all(uint64_t t) {Outputs out;for(size_t i=0;i<max_keys;++i)if(output_counts_[i]){Key k=key_for_slot(i);out.push(k,false,t);output_counts_[i]=0;}presses_={};layers_.reset();variables_={};suppressions_={};sticky_=0;sticky_owner_=0;return out;}
+    Outputs release_all(uint64_t t) {Outputs out;for(size_t i=0;i<max_keys;++i)if(output_counts_[i]){Key k=key_for_slot(i);out.push(k,false,t);output_counts_[i]=0;}presses_={};layers_.reset();variables_={};suppressions_={};sticky_=0;sticky_owner_=0;emergency_start_=0;return out;}
     Outputs tick(uint64_t t) {
         Outputs out;
         if(emergency_start_ && t-emergency_start_>=1000){out=release_all(t);paused_=true;emergency_start_=0;return out;}

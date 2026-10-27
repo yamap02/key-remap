@@ -4,6 +4,9 @@
 #import <SystemConfiguration/SystemConfiguration.h>
 #include "Engine.hpp"
 #include "VirtualHIDOutput.hpp"
+#include "PowerState.hpp"
+#include <IOKit/IOMessage.h>
+#include <IOKit/pwr_mgt/IOPMLib.h>
 #include <IOKit/hid/IOHIDManager.h>
 #include <IOKit/hidsystem/IOHIDLib.h>
 #include <pwd.h>
@@ -18,10 +21,14 @@
 
 namespace {
 uint64_t now_ms(){return uint64_t(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)/1000000);}
-struct Device { IOHIDDeviceRef hid=nullptr;rekey::Identity identity;std::string name;std::unique_ptr<rekey::Engine> engine;bool seized=false,muted=false;uint64_t inputs=0,outputs=0,started=0,retry_at=0; };
+struct Device { IOHIDDeviceRef hid=nullptr;rekey::Identity identity;std::string name;std::unique_ptr<rekey::Engine> engine;bool seized=false,muted=false;uint64_t inputs=0,outputs=0,started=0,retry_at=0,capture_started=0; };
 struct Trace {uint64_t time;uint32_t device,key,output;bool down,output_down;int rule;uint8_t input_modifiers,output_modifiers;};
 class Core {
 public:
+    rekey::PowerState power;
+    IONotificationPortRef system_port=nullptr,display_port=nullptr;
+    io_connect_t power_connection=IO_OBJECT_NULL;
+    io_object_t system_notifier=IO_OBJECT_NULL,display_notifier=IO_OBJECT_NULL;
     IOHIDManagerRef manager=nullptr;std::array<Device,32> devices{};rekey::JSON config;std::string error="Configuration not loaded";uid_t uid=0;std::string config_path;time_t modified=0;long modified_ns=0;dispatch_source_t config_watch=nullptr,link_watch=nullptr;std::string watch_path;
     rekey::VirtualHIDOutput output;uint64_t output_epoch=0;bool paused=true,viewer=false,secure=true,conflict=false,input_monitoring=false,agent_accessibility=false;uint64_t viewer_deadline=0,housekeeping=0,last_context=0,ui_deadline=0;std::array<Trace,2048> traces{};size_t trace_write=0,trace_read=0;struct PendingAction {uint32_t device;int action;};std::array<PendingAction,256> actions{};size_t action_write=0,action_read=0;rekey::Context context;
     Core(){
@@ -29,8 +36,37 @@ public:
         IOHIDManagerRegisterDeviceMatchingCallback(manager,[](void* ctx,IOReturn,void*,IOHIDDeviceRef d){static_cast<Core*>(ctx)->add(d);},this);
         IOHIDManagerRegisterDeviceRemovalCallback(manager,[](void* ctx,IOReturn,void*,IOHIDDeviceRef d){static_cast<Core*>(ctx)->remove(d);},this);
         IOHIDManagerScheduleWithRunLoop(manager,CFRunLoopGetMain(),kCFRunLoopDefaultMode);IOHIDManagerOpen(manager,0);
+        power_connection=IORegisterForSystemPower(this,&system_port,[](void* ctx,io_service_t,natural_t message,void* argument){
+            auto& c=*static_cast<Core*>(ctx);
+            if(message==kIOMessageSystemWillSleep)c.power_changed(c.power.system(true));
+            else if(message==kIOMessageSystemHasPoweredOn)c.power_changed(c.power.system(false));
+            if(message==kIOMessageCanSystemSleep||message==kIOMessageSystemWillSleep)
+                IOAllowPowerChange(c.power_connection,reinterpret_cast<intptr_t>(argument));
+        },&system_notifier);
+        if(system_port)CFRunLoopAddSource(CFRunLoopGetMain(),IONotificationPortGetRunLoopSource(system_port),kCFRunLoopDefaultMode);
+        display_port=IONotificationPortCreate(kIOMainPortDefault);
+        auto display=IOServiceGetMatchingService(kIOMainPortDefault,IOServiceMatching("IODisplayWrangler"));
+        if(display&&display_port){
+            IOServiceAddInterestNotification(display_port,display,kIOGeneralInterest,[](void* ctx,io_service_t,natural_t message,void*){
+                auto& c=*static_cast<Core*>(ctx);
+                if(message==kIOMessageDeviceWillPowerOff)c.power_changed(c.power.display(true));
+                else if(message==kIOMessageDeviceHasPoweredOn)c.power_changed(c.power.display(false));
+            },this,&display_notifier);
+        }
+        if(display)IOObjectRelease(display);
+        if(display_port)CFRunLoopAddSource(CFRunLoopGetMain(),IONotificationPortGetRunLoopSource(display_port),kCFRunLoopDefaultMode);
+        if(!power_connection||!display_notifier)os_log_error(OS_LOG_DEFAULT,"ReKey power notifications unavailable: system=%{public}d display=%{public}d",bool(power_connection),bool(display_notifier));
     }
-    ~Core(){if(config_watch)dispatch_source_cancel(config_watch);if(link_watch)dispatch_source_cancel(link_watch);stop();IOHIDManagerClose(manager,0);CFRelease(manager);}
+    ~Core(){if(system_notifier)IODeregisterForSystemPower(&system_notifier);if(power_connection)IOServiceClose(power_connection);if(display_notifier)IOObjectRelease(display_notifier);if(system_port)IONotificationPortDestroy(system_port);if(display_port)IONotificationPortDestroy(display_port);if(config_watch)dispatch_source_cancel(config_watch);if(link_watch)dispatch_source_cancel(link_watch);stop();IOHIDManagerClose(manager,0);CFRelease(manager);}
+    void power_changed(bool changed){
+        if(!changed)return;
+        stop();
+        // Invalidate queued downs as well as the engine's held keys. The worker
+        // sends empty reports for every HID report family on this new epoch.
+        output.reset();
+        for(auto& d:devices){if(d.engine)(void)d.engine->release_all(now_ms());d.retry_at=0;}
+        os_log_info(OS_LOG_DEFAULT,"ReKey power transition; capture suspended=%{public}d",power.suspended());
+    }
     void add(IOHIDDeviceRef hid){
         auto str=[&](CFStringRef k){auto v=IOHIDDeviceGetProperty(hid,k);return v&&CFGetTypeID(v)==CFStringGetTypeID()?std::string([(__bridge NSString*)v UTF8String]):std::string();};
         auto num=[&](CFStringRef k){int n=0;auto v=IOHIDDeviceGetProperty(hid,k);if(v&&CFGetTypeID(v)==CFNumberGetTypeID())CFNumberGetValue((CFNumberRef)v,kCFNumberIntType,&n);return n;};
@@ -50,9 +86,11 @@ public:
     }
 
     void value(IOHIDValueRef v){
+        if(power.suspended())return;
         if(output_epoch!=output.epoch()||!output.ready()){stop();return;}
         auto element=IOHIDValueGetElement(v);auto hid=IOHIDElementGetDevice(element);auto page=IOHIDElementGetUsagePage(element),usage=IOHIDElementGetUsage(element);if((page!=7&&page!=12&&page!=0xff&&page!=0xff01)||usage==0)return;
         Device* d=nullptr;for(auto& x:devices)if(x.hid==hid){d=&x;break;}if(!d||!d->seized||!d->engine||d->muted)return;
+        if(IOHIDValueGetTimeStamp(v)<d->capture_started)return;
         rekey::Key key=page==7?usage:(page<<16)|usage;bool down=IOHIDValueGetIntegerValue(v)!=0;if(d->inputs++==0)d->started=now_ms();
         auto out=d->engine->process({key,down,now_ms(),uint32_t(d-devices.data())});if(!d->muted)send(out,*d);
         record(key,down,out,*d);
@@ -99,11 +137,11 @@ public:
         if(now_ms()-housekeeping>=1000){housekeeping=now_ms();load();conflict=karabiner();input_monitoring=IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)==kIOHIDAccessTypeGranted;}
         output.heartbeat();
         if(output_epoch!=output.epoch()){stop();output_epoch=output.epoch();}
-        if(paused||(config.is_object()&&config.at("global").value("disable_on_quit",true)&&now_ms()>ui_deadline)||conflict||!output.ready()){stop();return;}
+        if(power.suspended()||paused||(config.is_object()&&config.at("global").value("disable_on_quit",true)&&now_ms()>ui_deadline)||conflict||!output.ready()){stop();return;}
         if(!input_monitoring){error="Input Monitoring permission is required for rekey-core";stop();return;}
         bool disable_builtin=false;for(auto& d:devices)if(d.hid&&!d.identity.builtin&&d.engine&&d.engine->program().disable_builtin)disable_builtin=true;
         for(auto& d:devices){if(!d.hid||!d.engine)continue;if(d.engine->program().ignore){release(d);continue;}
-            if(!d.seized){if(now_ms()<d.retry_at)continue;auto result=IOHIDDeviceOpen(d.hid,kIOHIDOptionsTypeSeizeDevice);if(result!=kIOReturnSuccess){d.retry_at=now_ms()+1000;error="Keyboard could not be seized (Input Monitoring or another remapper)";continue;}d.retry_at=0;if(error=="Keyboard could not be seized (Input Monitoring or another remapper)"||error=="Input Monitoring permission is required for rekey-core")error.clear();d.seized=true;d.inputs=0;d.outputs=0;d.started=now_ms();IOHIDDeviceRegisterInputValueCallback(d.hid,[](void* ctx,IOReturn,void*,IOHIDValueRef v){static_cast<Core*>(ctx)->value(v);},this);IOHIDDeviceScheduleWithRunLoop(d.hid,CFRunLoopGetMain(),kCFRunLoopDefaultMode);}
+            if(!d.seized){if(now_ms()<d.retry_at)continue;d.capture_started=mach_absolute_time();auto result=IOHIDDeviceOpen(d.hid,kIOHIDOptionsTypeSeizeDevice);if(result!=kIOReturnSuccess){d.retry_at=now_ms()+1000;error="Keyboard could not be seized (Input Monitoring or another remapper)";continue;}d.retry_at=0;if(error=="Keyboard could not be seized (Input Monitoring or another remapper)"||error=="Input Monitoring permission is required for rekey-core")error.clear();d.seized=true;d.inputs=0;d.outputs=0;d.started=now_ms();IOHIDDeviceRegisterInputValueCallback(d.hid,[](void* ctx,IOReturn,void*,IOHIDValueRef v){static_cast<Core*>(ctx)->value(v);},this);IOHIDDeviceScheduleWithRunLoop(d.hid,CFRunLoopGetMain(),kCFRunLoopDefaultMode);}
             if(d.engine->paused()){paused=true;error="Emergency stop activated";break;}
             bool mute=disable_builtin&&d.identity.builtin;if(mute&&!d.muted)send(d.engine->release_all(now_ms()),d);d.muted=mute;
             if(d.muted)continue;
