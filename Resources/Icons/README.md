@@ -2,7 +2,8 @@
 
 `AppIcon.png` is the transparent source artwork. `scripts/build-icons.sh` creates
 the standard 16–1024 px representations and `build/AppIcon.icns` for the app bundle.
-`CFBundleIconFile` points to this icon. The background Agent has no icon declaration.
+`CFBundleIconFile` points to this icon in both the main app and the background
+Agent, so macOS can identify ReKey consistently in privacy settings.
 
 The menu bar uses three 18 pt vector PDFs, generated with
 `swift scripts/render-menu-icons.swift`: exchange arrows for active remapping,
