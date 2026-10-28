@@ -2,6 +2,11 @@ import SwiftUI
 import AppKit
 import ReKeyModel
 
+enum ReKeyStyle {
+    static let accent = Color(red: 0.28, green: 0.36, blue: 0.76)
+    static let softAccent = accent.opacity(0.10)
+}
+
 struct SettingsView: View {
     @Bindable var state: AppState
     @Environment(\.openWindow) private var openWindow
@@ -9,25 +14,38 @@ struct SettingsView: View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 12) {
-                    Image(systemName: "keyboard.fill").font(.system(size: 25)).foregroundStyle(.tint)
-                    VStack(alignment: .leading, spacing: 3) { Text("ReKey").font(.title2.bold()); Text("Your keys. Your way.").font(.caption).foregroundStyle(.secondary) }
-                }.padding(20).padding(.top, 8)
+                    Image(systemName: "keyboard.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 42, height: 42)
+                        .background(ReKeyStyle.accent.gradient, in: RoundedRectangle(cornerRadius: 13))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("ReKey").font(.system(size: 20, weight: .bold, design: .rounded))
+                        Text("YOUR KEYS, YOUR WAY").font(.system(size: 9, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+                    }
+                }.padding(.horizontal, 20).padding(.top, 22).padding(.bottom, 24)
                 List(SettingsPage.allCases, selection: $state.page) { page in Label(L(page.rawValue), systemImage: page.icon).tag(page).padding(.vertical, 5) }.listStyle(.sidebar)
                 Divider().padding(.horizontal)
                 VStack(alignment: .leading, spacing: 8) {
-                    Label(state.statusTitle, systemImage: state.operational ? "checkmark.circle.fill" : "exclamationmark.circle.fill").font(.caption.weight(.medium)).foregroundStyle(state.statusColor)
-                    Text("v0.1.0 · 開発版").font(.caption2).foregroundStyle(.tertiary)
+                    HStack(spacing: 8) {
+                        Circle().fill(state.statusColor).frame(width: 7, height: 7)
+                        Text(L(state.statusTitle)).font(.caption.weight(.semibold))
+                    }
+                    Text("ReKey  ·  v0.1.0").font(.caption2).foregroundStyle(.secondary)
                 }.padding(20)
             }.navigationSplitViewColumnWidth(min: 210, ideal: 220, max: 250)
         } detail: {
             VStack(spacing: 0) {
                 HStack {
-                    Text(L((state.page ?? .simple).rawValue)).font(.system(size: 26, weight: .bold))
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("WORKSPACE").font(.system(size: 10, weight: .bold)).tracking(1.5).foregroundStyle(ReKeyStyle.accent)
+                        Text(L((state.page ?? .simple).rawValue)).font(.system(size: 27, weight: .bold, design: .rounded))
+                    }
                     Spacer()
                     Picker("プロファイル", selection: Binding(get: { state.profile.id }, set: { state.selectProfile($0) })) {
                         ForEach(state.config.profiles) { Text($0.name).tag($0.id) }
                     }.labelsHidden().frame(width: 170)
-                    Button { state.togglePause() } label: { Image(systemName: state.isPaused ? "play.fill" : "pause.fill") }.help(state.isPaused ? "再開" : "一時停止")
+                    Button { state.togglePause() } label: { Label(L(state.isPaused ? "再開" : "一時停止"), systemImage: state.isPaused ? "play.fill" : "pause.fill") }.help(state.isPaused ? "再開" : "一時停止")
                 }.padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 18)
                 if !state.operational && state.page != .permissions {
                     HStack(alignment: .top, spacing: 10) {
@@ -58,8 +76,9 @@ struct SettingsView: View {
                     Spacer()
                     Button("EventViewer", systemImage: "waveform.path") { openWindow(id: "events") }.buttonStyle(.plain).font(.caption)
                 }.padding(.horizontal, 28).padding(.vertical, 12)
-            }.background(Color(nsColor: .windowBackgroundColor))
+            }.background(Color(nsColor: .controlBackgroundColor))
         }
+        .tint(ReKeyStyle.accent)
         .alert("ReKey", isPresented: Binding(get: { state.error != nil }, set: { if !$0 { state.error = nil } })) { Button("OK") { state.error = nil } } message: { Text(state.error ?? "") }
         .sheet(isPresented: $state.showImportReview) { ImportReview(state: state) }
         .sheet(isPresented: $state.showUninstall) { UninstallView(state: state) }
@@ -141,29 +160,76 @@ struct SimpleMappingsView: View {
         VStack(alignment: .leading, spacing: 20) {
             Text("キーを、使いやすい場所へ。").font(.callout).foregroundStyle(.secondary)
             ScopePicker(state: state)
-            VStack(spacing: 0) {
-                HStack { Text("変更前のキー"); Spacer(); Image(systemName: "arrow.right"); Spacer(); Text("変更後のキー"); Spacer().frame(width: 40) }.font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(16).background(.quaternary.opacity(0.4))
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("キーの割り当て").font(.headline)
+                        Text("押したキーを、好きなキーに変更します").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if !state.simpleMappings.isEmpty {
+                        Button("追加", systemImage: "plus") { state.simpleMappings.append(.init()) }
+                    }
+                }.padding(20)
+                Divider()
                 if state.simpleMappings.isEmpty {
-                    ContentUnavailableView { Label("リマップを追加", systemImage: "keyboard") } description: { Text("Caps Lock を Control に、英数をかなに。\nキーボードごとに、自分だけの配列を作れます。") } actions: { Button("最初のリマップを追加", systemImage: "plus") { state.simpleMappings.append(.init()) }.buttonStyle(.borderedProminent) }.padding(.vertical, 32)
+                    VStack(spacing: 16) {
+                        HStack(spacing: 12) {
+                            KeyIllustration(title: "caps", subtitle: "lock")
+                            Image(systemName: "arrow.right").font(.headline).foregroundStyle(ReKeyStyle.accent)
+                            KeyIllustration(title: "control", subtitle: "⌃")
+                        }.accessibilityHidden(true)
+                        VStack(spacing: 6) {
+                            Text("あなたらしい配列を作ろう").font(.headline)
+                            Text("たとえば Caps Lock を Control に。\nよく使うキーを、心地よい場所へ。")
+                                .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        }
+                        Button("最初のリマップを追加", systemImage: "plus") { state.simpleMappings.append(.init()) }
+                            .buttonStyle(.borderedProminent).controlSize(.large)
+                    }.frame(maxWidth: .infinity).padding(.vertical, 38)
                 } else {
+                    HStack {
+                        Text("変更前").frame(maxWidth: .infinity, alignment: .leading)
+                        Text("変更後").frame(maxWidth: .infinity, alignment: .leading)
+                        Spacer().frame(width: 28)
+                    }.font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.vertical, 12)
                     ScrollView {
                         VStack(spacing: 0) {
                             ForEach(Array(state.simpleMappings.enumerated()), id: \.element.id) { index, mapping in
-                                HStack(spacing: 20) {
+                                HStack(spacing: 12) {
                                     KeyPicker(title: "変更前", selection: Binding(get: { mapping.from.key }, set: { state.simpleMappings[index].from.key = $0 }))
-                                    Image(systemName: "arrow.right").foregroundStyle(.tertiary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    Image(systemName: "arrow.right").foregroundStyle(ReKeyStyle.accent)
                                     KeyPicker(title: "変更後", selection: Binding(get: { mapping.to.first?.key ?? "a" }, set: { state.simpleMappings[index].to = [.init($0)] }))
-                                    Button(role: .destructive) { state.simpleMappings.remove(at: index) } label: { Image(systemName: "minus.circle") }.buttonStyle(.borderless).help("削除")
-                                }.padding(16)
-                                if index < state.simpleMappings.count - 1 { Divider().padding(.horizontal, 16) }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    Button(role: .destructive) { state.simpleMappings.remove(at: index) } label: { Image(systemName: "trash") }.buttonStyle(.borderless).help("削除")
+                                }.padding(.horizontal, 20).padding(.vertical, 14)
+                                if index < state.simpleMappings.count - 1 { Divider().padding(.horizontal, 20) }
                             }
                         }
                     }
                 }
-            }.background(.background, in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).stroke(.separator.opacity(0.5)))
-            if !state.simpleMappings.isEmpty { Button("リマップを追加", systemImage: "plus") { state.simpleMappings.append(.init()) } }
-            HStack(alignment: .top) { Image(systemName: "info.circle"); Text("デバイス固有の設定を優先して適用します。単純リマップ後のキーで複合ルールを評価し、出力を再変換しません。") }.font(.caption).foregroundStyle(.secondary)
+            }.background(.background, in: RoundedRectangle(cornerRadius: 16)).overlay(RoundedRectangle(cornerRadius: 16).stroke(.separator.opacity(0.45)))
+            Label("デバイス固有の設定を優先して適用します。単純リマップ後のキーで複合ルールを評価し、出力を再変換しません。", systemImage: "info.circle")
+                .font(.caption).foregroundStyle(.secondary)
         }.padding(.horizontal, 28).padding(.bottom, 24)
+    }
+}
+
+private struct KeyIllustration: View {
+    let title: String
+    let subtitle: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(subtitle).font(.caption2)
+            Spacer()
+            Text(title).font(.caption.weight(.semibold))
+        }
+        .foregroundStyle(ReKeyStyle.accent)
+        .frame(width: 72, height: 58, alignment: .leading)
+        .padding(10)
+        .background(ReKeyStyle.softAccent, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(ReKeyStyle.accent.opacity(0.16)))
     }
 }
 struct ImportReview: View {
