@@ -12,13 +12,13 @@ import Foundation
         #expect(client.connectionError != nil)
         #expect(client.status == nil)
     }
-    client.viewing = true
+    client.startViewer()
     client.pollEvents()
     client.reloadConfiguration()
     try await Task.sleep(for: .milliseconds(50))
     client.stopViewer()
     client.shutdown()
-    #expect(client.events.isEmpty)
+    #expect(client.eventLog.events.isEmpty)
 }
 
 // Missing fields from an older service and an expired Agent heartbeat must
@@ -35,18 +35,18 @@ import Foundation
                 "conflict": false, "error": "", "uid": 501,
                 "input_monitoring": input, "agent_accessibility": accessibility
             ])
-            client.status = try JSONDecoder().decode(RuntimeStatus.self, from: data)
+            client.updateStatus(try JSONDecoder().decode(RuntimeStatus.self, from: data))
             #expect(client.inputMonitoringReady == input)
             #expect(client.agentAccessibilityReady == accessibility)
             #expect(client.eventViewerReady == (input && accessibility))
         }
     }
     // A service without Agent permission reporting cannot enable EventViewer.
-    client.status = try JSONDecoder().decode(RuntimeStatus.self, from: Data(
-        #"{"paused":false,"driver_ready":true,"input_monitoring":true,"seized_devices":1,"conflict":false,"error":"","uid":501}"#.utf8))
+    client.updateStatus(try JSONDecoder().decode(RuntimeStatus.self, from: Data(
+        #"{"paused":false,"driver_ready":true,"input_monitoring":true,"seized_devices":1,"conflict":false,"error":"","uid":501}"#.utf8)))
     #expect(client.inputMonitoringReady)
     #expect(!client.agentAccessibilityReady)
     #expect(!client.eventViewerReady)
-    client.status = nil
+    client.updateStatus(nil)
     #expect(!client.eventViewerReady)
 }

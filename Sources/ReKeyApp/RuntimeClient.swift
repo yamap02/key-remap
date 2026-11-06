@@ -1,8 +1,9 @@
 import Foundation
+import Combine
 import ReKeyModel
 import ReKeyIPC
 
-struct RuntimeStatus: Decodable, Sendable {
+struct RuntimeStatus: Decodable, Equatable, Sendable {
     var paused: Bool
     var driver_ready: Bool
     var agent_accessibility: Bool?
@@ -30,14 +31,16 @@ struct TraceEvent: Decodable, Identifiable, Sendable {
     enum CodingKeys: String, CodingKey { case input_modifiers, output_modifiers, time_ns, device, device_name, vendor_id, product_id, input, input_down, output, output_down, rule, rule_name }
     func label(_ code: UInt32) -> String { code == 0 ? "—" : KeyCatalog.label(KeyCatalog.name(page: code < 256 ? 7 : code >> 16, usage: code < 256 ? code : code & 65535)) }
 }
-@MainActor @Observable final class RuntimeClient {
-    var status: RuntimeStatus?
+@MainActor final class RuntimeClient: ObservableObject {
+    @Published private(set) var status: RuntimeStatus?
     var inputMonitoringReady: Bool { status?.input_monitoring == true }
     var agentAccessibilityReady: Bool { status?.agent_accessibility == true }
     var eventViewerReady: Bool { inputMonitoringReady && agentAccessibilityReady }
-    var connectionError: String?
-    var events: [TraceEvent] = []
-    var viewing = false
+    @Published var connectionError: String?
+    let eventLog = EventLog()
+    private(set) var viewing = false
+    private(set) var viewerSession: UInt64 = 0
+    private var viewerSuspended = false
     private let serviceName: String
     init(serviceName: String = "jp.example.rekey.core") { self.serviceName = serviceName }
     private var connection: NSXPCConnection?
@@ -47,8 +50,8 @@ struct TraceEvent: Decodable, Identifiable, Sendable {
         guard connection == nil else { return }
         let c = NSXPCConnection(machServiceName: serviceName, options: .privileged)
         c.remoteObjectInterface = NSXPCInterface(with: ReKeyControl.self)
-        c.invalidationHandler = { @Sendable [weak self] in Task { @MainActor in self?.connection = nil; self?.status = nil; self?.statusInFlight = false; self?.eventsInFlight = false } }
-        c.interruptionHandler = { @Sendable [weak self] in Task { @MainActor in self?.status = nil; self?.statusInFlight = false; self?.eventsInFlight = false } }
+        c.invalidationHandler = { @Sendable [weak self] in Task { @MainActor in self?.connection = nil; self?.updateStatus(nil); self?.statusInFlight = false; self?.eventsInFlight = false } }
+        c.interruptionHandler = { @Sendable [weak self] in Task { @MainActor in self?.updateStatus(nil); self?.statusInFlight = false; self?.eventsInFlight = false } }
         c.resume(); connection = c
     }
     func refresh() {
@@ -56,22 +59,24 @@ struct TraceEvent: Decodable, Identifiable, Sendable {
         statusInFlight = true
         guard let remote = connection?.remoteObjectProxyWithErrorHandler({ @Sendable [weak self] error in
             let message = error.localizedDescription
-            Task { @MainActor in self?.connectionError = message; self?.status = nil; self?.statusInFlight = false }
+            Task { @MainActor in if self?.connectionError != message { self?.connectionError = message }; self?.updateStatus(nil); self?.statusInFlight = false }
         }) as? ReKeyControl else { statusInFlight = false; return }
         remote.status { @Sendable [weak self] text in
             let decoded = try? JSONDecoder().decode(RuntimeStatus.self, from: Data(text.utf8))
-            Task { @MainActor in self?.status = decoded; self?.connectionError = nil; self?.statusInFlight = false }
+            Task { @MainActor in self?.updateStatus(decoded); if self?.connectionError != nil { self?.connectionError = nil }; self?.statusInFlight = false }
         }
     }
     func pollEvents() {
         guard viewing, !eventsInFlight else { return }
+        viewerSuspended = false
         connect(); eventsInFlight = true
         guard let remote = connection?.remoteObjectProxyWithErrorHandler({ @Sendable [weak self] _ in Task { @MainActor in self?.eventsInFlight = false } }) as? ReKeyControl else { eventsInFlight = false; return }
+        let session = viewerSession
         remote.events(enabled: true) { @Sendable [weak self] data in
             let batch = (try? JSONDecoder().decode([TraceEvent].self, from: data)) ?? []
             Task { @MainActor in
                 guard let self else { return }
-                if self.viewing { self.events.append(contentsOf: batch); if self.events.count > 2000 { self.events.removeFirst(self.events.count - 2000) } }
+                self.receiveEvents(batch, session: session)
                 self.eventsInFlight = false
             }
         }
@@ -87,12 +92,51 @@ struct TraceEvent: Decodable, Identifiable, Sendable {
         (connection?.remoteObjectProxyWithErrorHandler { @Sendable _ in } as? ReKeyControl)?.reload { _ in }
     }
     func shutdown() { (connection?.remoteObjectProxyWithErrorHandler { @Sendable _ in } as? ReKeyControl)?.lifecycle(active: false) { _ in } }
+    func updateStatus(_ value: RuntimeStatus?) {
+        guard value != status else { return }
+        // Clear immediately when the Agent heartbeat or either permission is lost.
+        if value?.input_monitoring != true || value?.agent_accessibility != true {
+            viewerSession &+= 1
+            eventLog.clear()
+        }
+        status = value
+    }
+    func startViewer() {
+        viewerSession &+= 1
+        viewing = true
+        viewerSuspended = false
+        eventLog.clear()
+    }
+    func receiveEvents(_ batch: [TraceEvent], session: UInt64) {
+        guard viewing, session == viewerSession, eventViewerReady else { return }
+        eventLog.append(batch)
+    }
     func suspendViewer() {
-        events.removeAll()
+        guard !viewerSuspended else { return }
+        viewerSuspended = true
+        viewerSession &+= 1
+        eventLog.clear()
         (connection?.remoteObjectProxyWithErrorHandler { @Sendable _ in } as? ReKeyControl)?.events(enabled: false) { _ in }
     }
     func stopViewer() {
-        viewing = false; events.removeAll()
+        guard viewing else { return }
+        viewing = false; viewerSession &+= 1; eventLog.clear()
         (connection?.remoteObjectProxyWithErrorHandler { @Sendable _ in } as? ReKeyControl)?.events(enabled: false) { _ in }
+    }
+}
+
+// This publisher is consumed only by EventViewer, never the menu/settings model.
+@MainActor final class EventLog: ObservableObject {
+    static let capacity = 2000
+    @Published private(set) var events: [TraceEvent] = []
+
+    func append(_ batch: [TraceEvent]) {
+        guard !batch.isEmpty else { return }
+        let incoming = batch.suffix(Self.capacity)
+        let keep = Self.capacity - incoming.count
+        events = Array(events.suffix(keep)) + incoming
+    }
+    func clear() {
+        if !events.isEmpty { events = [] }
     }
 }

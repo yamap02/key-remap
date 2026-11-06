@@ -4,7 +4,7 @@ import ReKeyModel
 
 @main struct ReKeyApp: App {
     @AppStorage("language") private var language = "ja"
-    @State private var state = AppState()
+    @StateObject private var state = AppState()
     var body: some Scene {
         Window("ReKey", id: "settings") {
             SettingsView(state: state).environment(\.locale, language == "system" ? .autoupdatingCurrent : Locale(identifier: language))
@@ -38,7 +38,7 @@ import ReKeyModel
     private func openSettings() { NSApp.activate(ignoringOtherApps: true); NSApp.windows.first(where: { $0.title == "ReKey" })?.makeKeyAndOrderFront(nil) }
 }
 struct MenuContent: View {
-    @Bindable var state: AppState
+    @ObservedObject var state: AppState
     @Environment(\.openWindow) private var openWindow
     var body: some View {
         Text("ReKey · \(L(state.statusTitle))")

@@ -8,7 +8,7 @@ enum ReKeyStyle {
 }
 
 struct SettingsView: View {
-    @Bindable var state: AppState
+    @ObservedObject var state: AppState
     @Environment(\.openWindow) private var openWindow
     var body: some View {
         NavigationSplitView {
@@ -86,7 +86,7 @@ struct SettingsView: View {
     }
 }
 struct ScopePicker: View {
-    @Bindable var state: AppState
+    @ObservedObject var state: AppState
     var body: some View {
         HStack {
             Image(systemName: "keyboard").foregroundStyle(.secondary)
@@ -155,7 +155,7 @@ final class KeyCaptureNSView: NSView {
     override func flagsChanged(with event: NSEvent) { if let key = KeyCatalog.macKeyCodes[event.keyCode] { onKey?(key) } }
 }
 struct SimpleMappingsView: View {
-    @Bindable var state: AppState
+    @ObservedObject var state: AppState
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("キーを、使いやすい場所へ。").font(.callout).foregroundStyle(.secondary)
@@ -194,7 +194,7 @@ struct SimpleMappingsView: View {
                         Spacer().frame(width: 28)
                     }.font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.vertical, 12)
                     ScrollView {
-                        VStack(spacing: 0) {
+                        LazyVStack(spacing: 0) {
                             ForEach(Array(state.simpleMappings.enumerated()), id: \.element.id) { index, mapping in
                                 HStack(spacing: 12) {
                                     KeyPicker(title: "変更前", selection: Binding(get: { mapping.from.key }, set: { state.simpleMappings[index].from.key = $0 }))
@@ -233,7 +233,7 @@ private struct KeyIllustration: View {
     }
 }
 struct ImportReview: View {
-    @Bindable var state: AppState
+    @ObservedObject var state: AppState
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("設定をインポート").font(.title2.bold())
@@ -247,7 +247,7 @@ struct ImportReview: View {
     }
 }
 struct WelcomeView: View {
-    @Bindable var state: AppState
+    @ObservedObject var state: AppState
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Image(systemName: "keyboard.fill").font(.system(size: 52)).foregroundStyle(.tint)
@@ -265,7 +265,7 @@ struct WelcomeView: View {
 }
 
 struct UninstallView: View {
-    @Bindable var state: AppState
+    @ObservedObject var state: AppState
     @State private var removeSettings = false
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {

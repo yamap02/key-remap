@@ -44,7 +44,9 @@ public enum KeyCatalog {
         }
 
         /// Keyboard order within each group, rather than lexicographic order (F1, F10, F11…).
-        public var keys: [String] {
+        private static let groupedKeys = Dictionary(uniqueKeysWithValues: allCases.map { ($0, $0.makeKeys()) })
+        public var keys: [String] { Self.groupedKeys[self] ?? [] }
+        private func makeKeys() -> [String] {
             switch self {
             case .letters: "abcdefghijklmnopqrstuvwxyz".map(String.init)
             case .numbers: "1234567890".map(String.init)
@@ -60,12 +62,13 @@ public enum KeyCatalog {
             }
         }
     }
+    private static let namesByUsage = Dictionary(uniqueKeysWithValues: usages.map { ($0.value, $0.key) })
     public static func name(page: UInt32, usage: UInt32) -> String {
         let code = page == 7 ? usage : (page << 16) | usage
-        return usages.first(where: { $0.value == code })?.key ?? String(format: "0x%02X:0x%02X", page, usage)
+        return namesByUsage[code] ?? String(format: "0x%02X:0x%02X", page, usage)
     }
+    private static let labels = ["caps_lock": "⇪ Caps Lock", "left_control": "⌃ Left Control", "left_shift": "⇧ Left Shift", "left_option": "⌥ Left Option", "left_command": "⌘ Left Command", "right_control": "⌃ Right Control", "right_shift": "⇧ Right Shift", "right_option": "⌥ Right Option", "right_command": "⌘ Right Command", "spacebar": "Space", "return_or_enter": "↩ Return", "escape": "⎋ Escape", "delete_or_backspace": "⌫ Delete", "tab": "⇥ Tab", "japanese_eisuu": "英数", "japanese_kana": "かな", "international1": "ろ（JIS）", "international2": "カタカナ／ひらがな／ローマ字（JIS）", "international3": "￥（JIS）", "international4": "変換（JIS）", "international5": "無変換（JIS）", "left_arrow": "←", "right_arrow": "→", "up_arrow": "↑", "down_arrow": "↓"]
     public static func label(_ name: String) -> String {
-        let labels = ["caps_lock": "⇪ Caps Lock", "left_control": "⌃ Left Control", "left_shift": "⇧ Left Shift", "left_option": "⌥ Left Option", "left_command": "⌘ Left Command", "right_control": "⌃ Right Control", "right_shift": "⇧ Right Shift", "right_option": "⌥ Right Option", "right_command": "⌘ Right Command", "spacebar": "Space", "return_or_enter": "↩ Return", "escape": "⎋ Escape", "delete_or_backspace": "⌫ Delete", "tab": "⇥ Tab", "japanese_eisuu": "英数", "japanese_kana": "かな", "international1": "ろ（JIS）", "international2": "カタカナ／ひらがな／ローマ字（JIS）", "international3": "￥（JIS）", "international4": "変換（JIS）", "international5": "無変換（JIS）", "left_arrow": "←", "right_arrow": "→", "up_arrow": "↑", "down_arrow": "↓"]
         return labels[name] ?? (name.count == 1 ? name.uppercased() : name.replacingOccurrences(of: "_", with: " ").capitalized)
     }
     public static let macKeyCodes: [UInt16: String] = [0:"a",1:"s",2:"d",3:"f",4:"h",5:"g",6:"z",7:"x",8:"c",9:"v",11:"b",12:"q",13:"w",14:"e",15:"r",16:"y",17:"t",18:"1",19:"2",20:"3",21:"4",22:"6",23:"5",24:"equal_sign",25:"9",26:"7",27:"hyphen",28:"8",29:"0",30:"close_bracket",31:"o",32:"u",33:"open_bracket",34:"i",35:"p",36:"return_or_enter",37:"l",38:"j",39:"quote",40:"k",41:"semicolon",42:"backslash",43:"comma",44:"slash",45:"n",46:"m",47:"period",48:"tab",49:"spacebar",50:"grave_accent_and_tilde",51:"delete_or_backspace",53:"escape",54:"right_command",55:"left_command",56:"left_shift",57:"caps_lock",58:"left_option",59:"left_control",60:"right_shift",61:"right_option",62:"right_control",93:"international3",94:"international1",96:"f5",97:"f6",98:"f7",99:"f3",100:"f8",101:"f9",102:"japanese_eisuu",103:"f11",104:"japanese_kana",109:"f10",111:"f12",115:"home",116:"page_up",117:"delete_forward",118:"f4",119:"end",120:"f2",121:"page_down",122:"f1",123:"left_arrow",124:"right_arrow",125:"down_arrow",126:"up_arrow"]

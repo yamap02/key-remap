@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import AppKit
 import IOKit.hid
 import ServiceManagement
@@ -28,32 +29,34 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
 }
 
-@MainActor @Observable final class AppState {
-    var config = Configuration()
-    var page: SettingsPage? = .simple
-    var devices: [KeyboardDevice] = []
-    var selectedDevice = "all"
-    var error: String?
-    var saveStatus = "読み込み中…"
+// Publish UI values explicitly. Transport/task bookkeeping must never take part
+// in SwiftUI Observation tracking in this long-lived menu bar process.
+@MainActor final class AppState: ObservableObject {
+    @Published var config = Configuration()
+    @Published var page: SettingsPage? = .simple
+    @Published var devices: [KeyboardDevice] = []
+    @Published var selectedDevice = "all"
+    @Published var error: String?
+    @Published var saveStatus = "読み込み中…"
     var accessibility: Bool { runtime.agentAccessibilityReady }
     var inputMonitoringReady: Bool { runtime.inputMonitoringReady }
     var eventViewerReady: Bool { runtime.eventViewerReady }
-    var driverActive = false
-    var karabinerRunning = false
-    var runtime = RuntimeClient()
+    var driverActive: Bool { runtime.status?.driver_ready == true }
+    let runtime: RuntimeClient
+    private var runtimeChanges: AnyCancellable?
     var daemonStatus: String { runtime.status.map { $0.seized_devices > 0 && !$0.paused && !$0.conflict ? "稼働中" : $0.paused ? "一時停止中" : $0.conflict ? "Karabiner と競合" : "接続済み・入力待ち" } ?? "未接続" }
-    var importResult: ImportResult?
-    var showImportReview = false
-    var showWelcome = false
-    var showUninstall = false
+    @Published var importResult: ImportResult?
+    @Published var showImportReview = false
+    @Published var showWelcome = false
+    @Published var showUninstall = false
     var uninstalling = false
-    var frontmostApp = ""
-    var saving: Task<Void, Never>?
+    @Published var frontmostApp = ""
+    private var saving: Task<Void, Never>?
     private var polling: Task<Void, Never>?
     private var lastData: Data?
     private var dirty = false
     private var resumeAfterSave = false
-    private let store = ConfigurationStore()
+    private let store: ConfigurationStore
     private var hid: IOHIDManager?
     var profileIndex: Int { config.profiles.firstIndex(where: \.selected) ?? 0 }
     var profile: Profile { config.profiles[profileIndex] }
@@ -62,9 +65,14 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     var operational: Bool { daemonStatus == "稼働中" && driverActive && !config.global.paused }
     var statusTitle: String { isPaused ? "一時停止中" : operational ? "リマップ有効" : "セットアップが必要です" }
     var statusColor: Color { isPaused ? .secondary : operational ? .green : .orange }
-    init() {
+    init(store: ConfigurationStore = ConfigurationStore(), runtime: RuntimeClient = RuntimeClient(), startMonitoring: Bool = true) {
+        self.store = store
+        self.runtime = runtime
+        // Runtime publishes status/errors only; EventViewer owns its own log updates.
+        runtimeChanges = runtime.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         showWelcome = !FileManager.default.fileExists(atPath: store.url.path)
         reload()
+        guard startMonitoring else { return }
         refreshSystem()
         Task {
             do { try await retireLegacyOutputService() }
@@ -79,6 +87,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
             }
         }
     }
+    deinit { polling?.cancel(); saving?.cancel() }
+
     func reload(reloadEngine: Bool = false) {
         saving?.cancel(); saving = nil; resumeAfterSave = false
         do { let snapshot = try store.snapshot(); config = snapshot.configuration; lastData = snapshot.data; dirty = false; saveStatus = "設定を読み込みました"; if reloadEngine { runtime.reloadConfiguration() } }
@@ -269,9 +279,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         catch { self.error = error.localizedDescription }
     }
     func refreshSystem() {
-        frontmostApp = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
-        karabinerRunning = NSWorkspace.shared.runningApplications.contains { ($0.bundleIdentifier ?? "").contains("karabiner") || ($0.bundleIdentifier ?? "").contains("Karabiner") }
-        driverActive = runtime.status?.driver_ready ?? false
+        let app = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+        if frontmostApp != app { frontmostApp = app }
         runtime.refresh()
         refreshDevices()
     }
@@ -292,6 +301,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
             if found.contains(where: { $0.identity == identity }) { continue }
             found.append(.init(identity: identity, name: name, transport: prop(kIOHIDTransportKey) as? String ?? "Unknown", builtin: (prop(kIOHIDBuiltInKey) as? NSNumber)?.boolValue ?? false))
         }
-        devices = found.sorted { $0.name < $1.name }
+        let sorted = found.sorted { $0.name == $1.name ? $0.id < $1.id : $0.name < $1.name }
+        if devices != sorted { devices = sorted }
     }
 }

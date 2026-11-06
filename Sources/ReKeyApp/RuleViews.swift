@@ -2,7 +2,7 @@ import SwiftUI
 import ReKeyModel
 
 struct ComplexRulesView: View {
-    @Bindable var state: AppState
+    @ObservedObject var state: AppState
     @State private var editing: ComplexRule?
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -158,7 +158,7 @@ struct RuleEditor: View {
     }
 }
 struct LayersView: View {
-    @Bindable var state: AppState
+    @ObservedObject var state: AppState
     @State private var editing: Layer?
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {

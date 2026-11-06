@@ -4,7 +4,7 @@ import ServiceManagement
 import ReKeyModel
 
 struct DevicesView: View {
-    @Bindable var state: AppState
+    @ObservedObject var state: AppState
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -43,7 +43,7 @@ struct DevicesView: View {
     }
 }
 struct ProfilesView: View {
-    @Bindable var state: AppState
+    @ObservedObject var state: AppState
     @State private var deleting: Profile?
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -90,7 +90,7 @@ struct ProfilesView: View {
     }
 }
 struct PermissionsView: View {
-    @Bindable var state: AppState
+    @ObservedObject var state: AppState
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -118,7 +118,7 @@ struct PermissionsView: View {
 }
 struct GeneralView: View {
     @AppStorage("language") private var language = "ja"
-    @Bindable var state: AppState
+    @ObservedObject var state: AppState
     var body: some View {
         Form {
             Section("言語") { Picker("言語", selection: $language) { Text("日本語").tag("ja"); Text("English").tag("en"); Text("システム設定に従う").tag("system") } }
@@ -144,38 +144,43 @@ struct GeneralView: View {
     }
 }
 struct EventViewer: View {
-    @Bindable var state: AppState
+    @ObservedObject var state: AppState
+    @ObservedObject private var log: EventLog
     @State private var paused = false
+    init(state: AppState) {
+        self.state = state
+        self.log = state.runtime.eventLog
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 VStack(alignment: .leading, spacing: 6) { Text("EventViewer").font(.largeTitle.bold()); Text("受信した入力と、変換後の出力を確認します。").foregroundStyle(.secondary) }
                 Spacer()
                 Button(L(paused ? "表示を再開" : "表示を停止"), systemImage: paused ? "play" : "pause") { paused.toggle() }
-                Button("クリア", systemImage: "trash") { state.runtime.events.removeAll() }
+                Button("クリア", systemImage: "trash") { state.runtime.eventLog.clear() }
             }
             if !state.eventViewerReady {
                 ContentUnavailableView { Label(L(state.runtime.status == nil ? "入力サービスへの接続待ち" : state.inputMonitoringReady ? "ReKeyAgent の権限と接続を確認してください" : "入力監視の許可が必要です"), systemImage: "waveform.path") } description: { Text("通常のリマップにはアクセシビリティは不要です。EventViewer では ReKeyAgent による入力欄の安全確認が必要です。") } actions: { Button("EventViewer のアクセスを許可") { state.requestAccessibility(); state.openPrivacy("Privacy_Accessibility") }; Button("権限を確認") { state.page = .permissions; NSApp.windows.first(where: { $0.title == "ReKey" })?.makeKeyAndOrderFront(nil) } }
             } else {
-                Table(state.runtime.events) {
+                Table(log.events) {
                     TableColumn("時刻") { e in Text(String(format: "%.3f", Double(e.time_ns)/1_000_000_000)).monospacedDigit() }.width(90)
                     TableColumn("デバイス") { e in VStack(alignment: .leading) { Text(e.device_name ?? "Device \(e.device)"); Text("\(e.vendor_id ?? 0):\(e.product_id ?? 0)").font(.caption2).foregroundStyle(.secondary) } }
                     TableColumn("入力") { e in eventLabel(e.input, down: e.input_down, modifiers: e.input_modifiers, event: e) }
                     TableColumn("出力") { e in eventLabel(e.output, down: e.output_down, modifiers: e.output_modifiers, event: e) }
                     TableColumn("ルール") { e in Text(e.rule_name ?? (e.rule < 0 ? "—" : "Rule \(e.rule + 1)")) }
                 }
-                if state.runtime.events.isEmpty { Text("イベントを待っています。セキュアな入力欄のイベントは表示しません。").foregroundStyle(.secondary).frame(maxWidth: .infinity) }
+                if log.events.isEmpty { Text("イベントを待っています。セキュアな入力欄のイベントは表示しません。").foregroundStyle(.secondary).frame(maxWidth: .infinity) }
             }
             Label("最大 2,000 行 · ファイルには記録しません · セキュアな入力時は非表示", systemImage: "lock.shield").font(.caption).foregroundStyle(.secondary)
         }.padding(28)
         .task {
-            state.runtime.viewing = true
+            state.runtime.startViewer()
             while !Task.isCancelled {
                 // Polling also renews the viewing lease while AX is untrusted;
                 // Core returns no events until the Agent confirms a safe focus.
                 if !paused { state.runtime.pollEvents() }
                 else { state.runtime.suspendViewer() }
-                if !state.eventViewerReady { state.runtime.events.removeAll() }
+                if !state.eventViewerReady { state.runtime.eventLog.clear() }
                 try? await Task.sleep(for: .milliseconds(100))
             }
         }
