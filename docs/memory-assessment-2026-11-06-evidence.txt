@@ -1,0 +1,66 @@
+ReKey memory assessment — local diagnostic excerpts
+Date: 2026-11-06 JST
+Source HEAD: 4260cfc5277ebef283444f951d182efbacaff009
+Installed SHA-256: f425269eb35e86b8c75d77d1d4ec37eb8cf6c8cba6b934a14bff18abc33a111e
+Commands: heap -sortBySize 1673; vmmap -summary 1673; ps -axo pid,ppid,rss,vsz,etime,command
+
+vmmap first observation (2026-11-06 10:59:16 JST):
+Physical footprint: 700.2M; peak: 700.3M
+Writable regions: Total=843.4M written=689.1M resident=140.6M swapped_out=551.0M
+DefaultMallocZone: 4,898,763 allocations; 686.9M bytes allocated
+All malloc zones: 4,955,041 allocations; 689.4M bytes allocated
+
+ps initial RSS (KiB): ReKey 204784; rekey-core 9520; VirtualHID Daemon 5424; DriverKit 2064
+ReKeyAgent: no matching process observed
+Core vmmap: denied (insufficient privileges)
+Configuration file size: 3896 bytes (contents not included)
+
+heap excerpt: rekey-memory-heap-20261106.txt
+Process:         ReKey [1673]
+Path:            /Applications/ReKey.app/Contents/MacOS/ReKey
+Version:         0.1.0 (17)
+Date/Time:       2026-11-06 10:59:27.927 +0900
+Launch Time:     2026-10-30 09:33:03.839 +0900
+OS Version:      macOS 27.2 (26B123)
+Physical footprint:         700.2M
+Physical footprint (peak):  700.3M
+All zones: 4955163 nodes (722932810 bytes)
+
+   COUNT      BYTES       AVG   CLASS_NAME                                        TYPE    BINARY
+   =====      =====       ===   ==========                                        ====    ======
+  168360  172344448    1023.7   Swift._DictionaryStorage<Swift.ObjectIdentifier, Observation.ObservationTracking.Id>  Swift   libswiftCore.dylib
+ 1851283  148104176      80.0   Swift._SetStorage<Swift.AnyKeyPath>               Swift   libswiftCore.dylib
+      24  115892096  4828837.5   Swift._DictionaryStorage<Swift.Int, Observation.ObservationRegistrar.(State in $1961e09d0).Observation>  Swift   libswiftCore.dylib
+ 2023990   97344240      48.1   Closure context                                   Swift   <unknown>
+  168305   86167360     512.0   Swift._DictionaryStorage<Swift.ObjectIdentifier, Observation.ObservationTracking.Entry>  Swift   libswiftCore.dylib
+  257794   39956361     155.0   non-object
+      69   25582512  370761.0   Swift._SetStorage<Swift.Int>                      Swift   libswiftCore.dylib
+  170322    8221088      48.3   Closure context (unknown layout)                  Swift   <unknown>
+  168360    8081280      48.0   Observation._ManagedCriticalState<Observation.ObservationTracking.State>.(LockedBuffer in $1961e086c)<>  Swift   libswiftObservation.dylib
+     266    3925056   14755.8   Swift Metadata                                    C       libswiftCore.dylib
+    2084    1796128     861.9   Class.methodCache._buckets (bucket_t)             C       libobjc.A.dylib
+
+heap excerpt: rekey-memory-heap-second-20261106.txt
+Process:         ReKey [1673]
+Path:            /Applications/ReKey.app/Contents/MacOS/ReKey
+Version:         0.1.0 (17)
+Date/Time:       2026-11-06 11:00:05.141 +0900
+Launch Time:     2026-10-30 09:33:03.839 +0900
+OS Version:      macOS 27.2 (26B123)
+Physical footprint:         700.5M
+Physical footprint (peak):  700.8M
+All zones: 4957109 nodes (723345938 bytes)
+
+   COUNT      BYTES       AVG   CLASS_NAME                                        TYPE    BINARY
+   =====      =====       ===   ==========                                        ====    ======
+  168369  172353664    1023.7   Swift._DictionaryStorage<Swift.ObjectIdentifier, Observation.ObservationTracking.Id>  Swift   libswiftCore.dylib
+ 1851382  148112096      80.0   Swift._SetStorage<Swift.AnyKeyPath>               Swift   libswiftCore.dylib
+      24  115892096  4828837.5   Swift._DictionaryStorage<Swift.Int, Observation.ObservationRegistrar.(State in $1961e09d0).Observation>  Swift   libswiftCore.dylib
+ 2024098   97349424      48.1   Closure context                                   Swift   <unknown>
+  168314   86171968     512.0   Swift._DictionaryStorage<Swift.ObjectIdentifier, Observation.ObservationTracking.Entry>  Swift   libswiftCore.dylib
+  258582   40212577     155.5   non-object
+      69   25582512  370761.0   Swift._SetStorage<Swift.Int>                      Swift   libswiftCore.dylib
+  170338    8221984      48.3   Closure context (unknown layout)                  Swift   <unknown>
+  168369    8081712      48.0   Observation._ManagedCriticalState<Observation.ObservationTracking.State>.(LockedBuffer in $1961e086c)<>  Swift   libswiftObservation.dylib
+     266    3925056   14755.8   Swift Metadata                                    C       libswiftCore.dylib
+    2085    1800256     863.4   Class.methodCache._buckets (bucket_t)             C       libobjc.A.dylib
