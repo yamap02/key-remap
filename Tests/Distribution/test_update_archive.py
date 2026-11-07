@@ -3,6 +3,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('archive', ROOT / 'scripts/verify-update-archive.py')
@@ -39,6 +40,19 @@ class UpdateArchive(unittest.TestCase):
             link.unlink()
             link.symlink_to('MacOS/ReKey')
             (app / 'extra').write_text('extra')
+            with self.assertRaises(ValueError):
+                archive.verify(app, zipped)
+
+    def test_unsafe_metadata_paths_are_rejected_before_extraction(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app = root / 'ReKey.app'
+            app.mkdir()
+            (app / 'file').write_text('content')
+            zipped = root / 'release.zip'
+            subprocess.run(['/usr/bin/ditto', '-c', '-k', '--keepParent', str(app), str(zipped)], check=True)
+            with zipfile.ZipFile(zipped, 'a') as output:
+                output.writestr('__MACOSX/../outside', 'bad')
             with self.assertRaises(ValueError):
                 archive.verify(app, zipped)
 

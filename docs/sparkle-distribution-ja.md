@@ -70,7 +70,7 @@
    "$SPARKLE_BIN/sign_update" --account "$SPARKLE_ACCOUNT" --verify "$ARCHIVE" "$signature"
    ```
 
-   これにより今回の URL・サイズ、build の重複、旧版の URL・サイズ・署名の消失や変更を拒否する。公開後に取得した feed と zip にも同じ署名・整合検査を行う。メタデータ検査自体は署名を検証しない。
+   これにより今回の URL・サイズ、build の重複、旧版の URL・サイズ・署名の消失や変更を拒否する。公開後に取得した feed と zip にも同じ署名・整合検査を行う。メタデータ検査自体は署名を検証しない。次の pkg 作成時には、実際の更新 zip を一時ディレクトリに展開し、app の署名・公証チケット・Gatekeeper 評価も再検査する。実在の Developer ID と公証チケットによる成功経路は未検証。
 5. `gh release create <tag> --draft --verify-tag` で下書きを作り、署名・公証済み初回導入 pkg、更新 zip、署名済み appcast をアップロードする。下書きと試験環境で asset、内容と順序を確認してから公開する。安定 feed を GitHub の `releases/latest/download/appcast.xml` に置く場合、各正式 release にその名前の feed を含めて `gh release edit <tag> --draft=false --latest` で切り替える。公開後は feed と新旧 asset を HTTPS で実際に取得し、署名と内容を再検証する。初回導入 pkg は `REKEY_RELEASE=1` に加え `REKEY_INSTALLER_IDENTITY`、`REKEY_NOTARY_PROFILE`、手順 4 の zip を指す `REKEY_UPDATE_ARCHIVE` を設定した `scripts/build-pkg.sh` で生成する。公開用モードは app を再ビルドせず、手順 3〜4 で使った `build/ReKey.app` の製品 ID、版、feed、公開鍵、署名、公証チケットを確認して使う。さらに zip 内のファイル内容・権限・シンボリックリンクを app と照合し、異なれば中止する。この照合は署名や公証の検証の代わりにはならない。設定を変えた場合は app のビルドと公証からやり直す。コピー後も署名とチケットを確認する。Developer ID Installer と Team ID・タイムスタンプを検査し、公証応答が `Accepted` 以外なら中止、staple 後にチケット、署名、Gatekeeper の install 評価を検証する。公開用 pkg は検証完了まで一時ディレクトリに置き、完了後に `build/` へ移す。同名の既存リリースを上書きしない。
 
 署名と公証の検査は試験データと ad-hoc 署名の拒否を確認済みだが、実在する証明書での成功、実際の公証・配信先での通し検証は未実施。現在の pkg 停止処理の実機挙動と Sparkle 更新時の入力解放が未検証のため、手順があることを公開承認とみなさない。

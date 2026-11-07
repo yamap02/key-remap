@@ -28,6 +28,17 @@ fi
 stage=$(mktemp -d "${TMPDIR:-/tmp}/rekey-package.XXXXXX")
 trap 'rm -rf "$stage"' EXIT
 if [[ "$REKEY_RELEASE" == 1 ]]; then package_output="$stage/$package_filename"; else package_output="$final_output"; fi
+if [[ "$REKEY_RELEASE" == 1 ]]; then
+  # Check the actual update archive after extraction as well as its source;
+  # zip metadata must preserve the code signature and stapled ticket.
+  mkdir "$stage/update-archive"
+  ditto -x -k "$REKEY_UPDATE_ARCHIVE" "$stage/update-archive"
+  archived_app="$stage/update-archive/ReKey.app"
+  /usr/bin/python3 scripts/verify-package-app.py "$archived_app"
+  /usr/bin/python3 scripts/verify-release-signatures.py "$archived_app" "$REKEY_TEAM_ID"
+  xcrun stapler validate "$archived_app"
+  spctl --assess --type execute --verbose=2 "$archived_app"
+fi
 mkdir -p "$stage/root/Applications" "$stage/scripts"
 ditto --noextattr --noqtn --norsrc build/ReKey.app "$stage/root/Applications/ReKey.app"
 if [[ "$REKEY_RELEASE" == 1 ]]; then

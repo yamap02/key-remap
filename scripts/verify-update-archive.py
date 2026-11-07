@@ -35,6 +35,11 @@ def verify(app, archive):
     with zipfile.ZipFile(archive) as zipped:
         for item in zipped.infolist():
             name = item.filename
+            # Inspect metadata paths too, before any caller extracts the zip.
+            # PurePosixPath normalizes dot components, so check the raw name.
+            components = name.rstrip('/').split('/')
+            if name.startswith('/') or any(part in ('', '.', '..') for part in components):
+                raise ValueError(f'unsafe archive entry: {name}')
             parts = PurePosixPath(name).parts
             if name.startswith('__MACOSX/') or name == '__MACOSX':
                 continue
