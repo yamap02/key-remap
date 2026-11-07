@@ -34,6 +34,8 @@ if [[ -n "${REKEY_FEED_URL:-}" ]]; then
   /usr/libexec/PlistBuddy -c "Add :SUFeedURL string $REKEY_FEED_URL" "$app/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $REKEY_ED_PUBLIC_KEY" "$app/Contents/Info.plist"
 fi
+/usr/libexec/PlistBuddy -c 'Add :SURequireSignedFeed bool true' "$app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :SUVerifyUpdateBeforeExtraction bool true' "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :SUAllowsAutomaticUpdates bool false' "$app/Contents/Info.plist"
 framework_source="$PWD/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
 mkdir -p "$app/Contents/Frameworks"

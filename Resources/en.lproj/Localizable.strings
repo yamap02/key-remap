@@ -209,6 +209,6 @@
 "アップデート" = "Updates";
 "更新を自動的に確認" = "Automatically check for updates";
 "今すぐ更新を確認" = "Check for Updates Now";
-"更新の確認時に配信サーバーへ接続します。インストールには管理者認証が必要です。" = "Checking for updates connects to the distribution server. Installation requires administrator authorization.";
+"更新の確認時に配信サーバーへ接続します。インストール時に管理者認証を求められる場合があります。" = "Checking for updates connects to the distribution server. Installation may require administrator authorization.";
 "このビルドには更新配信先と公開鍵が設定されていません。" = "This build does not have an update feed and public key configured.";
 "ReKey について" = "About ReKey";
