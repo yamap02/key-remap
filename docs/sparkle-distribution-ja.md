@@ -12,7 +12,7 @@
 
 - `check_for_updates` は設定 JSON の自動確認設定として使う。設定画面から手動確認できる。自動ダウンロード・自動インストールは無効。feed URL または EdDSA 公開鍵のない開発ビルドでは更新を開始しない。
 - Sparkle 2.9.6 を固定。`REKEY_FEED_URL` と `REKEY_ED_PUBLIC_KEY` を両方指定して HTTPS feed と公開鍵を埋め込む。feed 署名と更新の展開前検証を必須とする。公開鍵は秘密鍵ではない。
-- `REKEY_VERSION` は app と Agent の表示版および pkg 版、`REKEY_BUILD_NUMBER` は app と Agent の build 番号。明示しない開発ビルドではそれぞれ `0.1.0` と Git コミット数を使用。公開時には両方を明示し、build 番号はリリースごとに単調増加させる。現行 pkg のバージョンと app build 番号の順序チェックは未実装。
+- `REKEY_VERSION` は app と Agent の表示版、`REKEY_BUILD_NUMBER` は app と Agent の build 番号および pkg receipt の版。明示しない開発ビルドではそれぞれ `0.1.0` と Git コミット数を使用。公開時には両方を明示し、build 番号はリリースごとに単調増加させる。`scripts/check-appcast-version.py` は署名検証済み feed の全履歴より新しい整数 build を要求する。試験 pkg の展開結果では ID と build 2001 が app と一致した。
 - `swift test`、`scripts/test-core.sh`、開発用 app のビルドと `codesign --verify --deep --strict` が通過。使い捨ての試験鍵で通常 app の zip と署名済み appcast を生成し、署名検証と feed・zip 改ざんの拒否を確認した。試験鍵は一時ディレクトリに作り実行後に削除した。実際の配布鍵による検証ではない。
 - 更新の有無、通信失敗、Sparkle UI、通常 app の root 所有維持、更新中断と物理キー解放、設定保持とサービス再接続は実機未検証。署名済み製品版・公証・GitHub への公開も未実施。
 
@@ -33,3 +33,22 @@
 ## 障害時の暫定復旧
 
 安全な別入力手段を確保し、ReKey の設定画面から入力サービスを停止する。アプリが操作できない場合は macOS のバックグラウンド項目で ReKey のサービスを無効化し、必要なら再起動する。設定は `~/Library/Application Support/ReKey/` にあり、削除や上書き前にバックアップする。サービス登録の承認、入力監視、ドライバ拡張を再確認し、署名と公証を確認した既知の旧版から復旧する。更新失敗からの自動復旧は未実装・未検証。
+
+## 署名済み通常 app のリリース準備手順（出荷ゲート通過後）
+
+以下は通常 app 更新の検証が完了した後に配布担当者が使う手順。事前に署名鍵と公証資格情報をキーチェーンへ登録し、Sparkle 2.9.6 の公式配布物の `bin` を `SPARKLE_BIN` に指定する。実際の値は配布担当者が設定する。`REKEY_PRODUCT_ID` や署名チームの変更は TCC・サービス登録への影響があるため、既存利用者向けには移行を検証する。
+
+1. 前回の appcast を HTTPS で取得し、**変更する前に**同じ配布用鍵で検証する。初回のみ、過去リリースがないことを別途確認して feed 比較を省略する。新しい build は前回値より大きく、表示版やタグも配布履歴と重複しないものにする。
+
+   ```sh
+   curl --fail --location "$REKEY_FEED_URL" -o build/previous-appcast.xml
+   "$SPARKLE_BIN/sign_update" --account "$SPARKLE_ACCOUNT" --verify build/previous-appcast.xml
+   python3 scripts/check-appcast-version.py build/previous-appcast.xml "$REKEY_BUILD_NUMBER"
+   ```
+
+2. `REKEY_PRODUCT_ID`、`REKEY_TEAM_ID`、`REKEY_SIGNING_IDENTITY`、`REKEY_VERSION`、`REKEY_BUILD_NUMBER`、`REKEY_FEED_URL`、`REKEY_ED_PUBLIC_KEY` を設定して `scripts/build-app.sh` を実行する。配布用 Team ID と署名が一致しなければビルドは失敗する。`codesign --verify --deep --strict --verbose=2 build/ReKey.app` で署名を確認する。
+3. `ditto -c -k --sequesterRsrc --keepParent build/ReKey.app build/notary.zip` を作成し、`xcrun notarytool submit build/notary.zip --keychain-profile "$REKEY_NOTARY_PROFILE" --wait` が Accepted になったことを確認する。`xcrun stapler staple build/ReKey.app`、`xcrun stapler validate build/ReKey.app`、`spctl --assess --type execute --verbose=4 build/ReKey.app` を実行し、staple 後の app から配布 zip を作り直す。拒否された場合は公開せず、notarytool のログを Apple から取得して修正する。
+4. 空の作業ディレクトリを用意し、直前に検証した旧 feed を `appcast.xml` としてコピーする。そこへ `ditto -c -k --sequesterRsrc --keepParent build/ReKey.app <作業ディレクトリ>/ReKey-<表示版>.zip` で新しい zip を置く。初回は旧 feed を置かない。`generate_appcast --account "$SPARKLE_ACCOUNT" --maximum-versions 0 --maximum-deltas 0 --download-url-prefix "https://github.com/<owner>/<repo>/releases/download/<tag>/" <作業ディレクトリ>` で作成する。owner・repo・tag は実際の GitHub Releases の値に置き換え、過去 item の URL が各旧 release を指したままか確認する。生成後 `sign_update --account "$SPARKLE_ACCOUNT" --verify <作業ディレクトリ>/appcast.xml` で署名を検証し、新旧各項目の build 番号、HTTPS URL、公開鍵、enclosure 署名を点検する。公開鍵と秘密鍵が対応することも署名検証および旧版による実機更新で確認する。
+5. `gh release create <tag> --draft --verify-tag` で下書きを作り、署名・公証済み初回導入 pkg、更新 zip、署名済み appcast をアップロードする。下書きと試験環境で asset、内容と順序を確認してから公開する。安定 feed を GitHub の `releases/latest/download/appcast.xml` に置く場合、各正式 release にその名前の feed を含めて `gh release edit <tag> --draft=false --latest` で切り替える。公開後は feed と新旧 asset を HTTPS で実際に取得し、署名と内容を再検証する。初回導入 pkg は `REKEY_INSTALLER_IDENTITY` と `REKEY_NOTARY_PROFILE` を設定した `scripts/build-pkg.sh` で生成し、Installer 署名・公証を別途確認する。
+
+この手順自体も実在する署名・公証・配信先での通し検証は未実施。現在の pkg 停止処理と Sparkle 更新時の入力解放が未検証のため、手順があることを公開承認とみなさない。
