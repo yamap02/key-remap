@@ -3,19 +3,6 @@ import AppKit
 import ReKeyModel
 import ServiceManagement
 
-@MainActor enum TerminationGate {
-    static var updateServiceOperationInProgress = false
-}
-
-@MainActor final class ReKeyApplicationDelegate: NSObject, NSApplicationDelegate {
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if TerminationGate.updateServiceOperationInProgress {
-            return .terminateCancel
-        }
-        return .terminateNow
-    }
-}
-
 @main struct ReKeyApp: App {
     @NSApplicationDelegateAdaptor(ReKeyApplicationDelegate.self) private var appDelegate
     @AppStorage("language") private var language = "ja"
