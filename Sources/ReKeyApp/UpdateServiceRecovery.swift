@@ -11,11 +11,18 @@ import Foundation
     }
     enum RecoveryError: LocalizedError {
         case unavailable(String)
-        var errorDescription: String? { if case let .unavailable(name) = self { return "サービスを利用できません: \(name)" }; return nil }
+        case pendingUpdate
+        var errorDescription: String? {
+            switch self {
+            case .unavailable(let name): return "サービスを利用できません: \(name)"
+            case .pendingUpdate: return "更新が保留中です。更新を確認して再開またはキャンセルしてください。"
+            }
+        }
     }
     private let defaults: UserDefaults
     private let buildKey = "updateRecovery.lastBuild"
     private let pendingKey = "updateRecovery.pendingServices"
+    private let originKey = "updateRecovery.pendingOriginBuild"
     private let serviceNames = ["core", "agent"]
 
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
@@ -24,7 +31,8 @@ import Foundation
 
     // Persist the exact enabled set before stopping anything. The next app can
     // restore it after an update, a failed stop, or an interrupted process.
-    func prepare(operations: Operations) async throws {
+    func prepare(build: String, operations: Operations) async throws {
+        guard !build.isEmpty else { throw RecoveryError.unavailable("build") }
         guard !hasPendingRecovery else { throw RecoveryError.unavailable("pending recovery") }
         var enabled: [String] = []
         for name in serviceNames {
@@ -34,18 +42,46 @@ import Foundation
             case .unavailable: throw RecoveryError.unavailable(name)
             }
         }
+        defaults.set(build, forKey: originKey)
         defaults.set(enabled, forKey: pendingKey)
         guard defaults.synchronize() else { throw RecoveryError.unavailable("recovery record") }
-        for name in enabled {
-            try await operations.stop(name)
-            guard operations.status(name) == .notRegistered else { throw RecoveryError.unavailable(name) }
+        try await ensureStopped(operations: operations)
+    }
+
+    // A previous process may have died immediately after saving the record,
+    // or a service may have been re-enabled externally. Check again before
+    // allowing Sparkle to continue, including services originally disabled.
+    func ensureStopped(operations: Operations) async throws {
+        guard let pending = defaults.stringArray(forKey: pendingKey),
+              pending.allSatisfy({ serviceNames.contains($0) }) else {
+            throw RecoveryError.unavailable("invalid recovery record")
+        }
+        for name in serviceNames {
+            let status = operations.status(name)
+            if pending.contains(name) {
+                switch status {
+                case .enabled: try await operations.stop(name)
+                case .notRegistered: break
+                case .requiresApproval, .unavailable: throw RecoveryError.unavailable(name)
+                }
+                guard operations.status(name) == .notRegistered else { throw RecoveryError.unavailable(name) }
+            } else {
+                switch status {
+                case .notRegistered, .requiresApproval: break
+                case .enabled, .unavailable: throw RecoveryError.unavailable(name)
+                }
+            }
         }
     }
 
-    func recover(build: String, operations: Operations) async throws {
+    func recover(build: String, operations: Operations, allowSameBuild: Bool = false) async throws {
         guard !build.isEmpty else { return }
         let previous = defaults.string(forKey: buildKey)
         var pending = defaults.stringArray(forKey: pendingKey)
+        if hasPendingRecovery && pending == nil { throw RecoveryError.unavailable("invalid recovery record") }
+        if pending != nil, let origin = defaults.string(forKey: originKey), origin == build, !allowSameBuild {
+            throw RecoveryError.pendingUpdate
+        }
         if pending == nil {
             guard let previous else { defaults.set(build, forKey: buildKey); return }
             guard previous != build else { return }
@@ -77,6 +113,7 @@ import Foundation
         }
         defaults.set(build, forKey: buildKey)
         defaults.removeObject(forKey: pendingKey)
+        defaults.removeObject(forKey: originKey)
         defaults.synchronize()
     }
 }

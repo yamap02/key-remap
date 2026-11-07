@@ -107,7 +107,7 @@ import ReKeyModel
     let fixture = RecoveryFixture(); defer { fixture.clean() }
     let recovery = UpdateServiceRecovery(defaults: fixture.defaults)
     try await recovery.recover(build: "10", operations: fixture.operations())
-    try await recovery.prepare(operations: fixture.operations())
+    try await recovery.prepare(build: "10", operations: fixture.operations())
     #expect(fixture.actions == ["stop-core"])
     #expect(recovery.hasPendingRecovery)
     #expect(fixture.status["core"] == .notRegistered)
@@ -128,12 +128,55 @@ import ReKeyModel
         if name == "agent" { throw NSError(domain: "test", code: 1) }
         try await normal.stop(name)
     }, start: normal.start)
-    do { try await recovery.prepare(operations: failing); Issue.record("Stop failure must stop the update") } catch {}
+    do { try await recovery.prepare(build: "10", operations: failing); Issue.record("Stop failure must stop the update") } catch {}
     #expect(recovery.hasPendingRecovery)
     #expect(fixture.status["core"] == .notRegistered)
     #expect(fixture.status["agent"] == .enabled)
-    try await recovery.recover(build: "10", operations: fixture.operations())
+    try await recovery.recover(build: "10", operations: fixture.operations(), allowSameBuild: true)
     #expect(fixture.status["core"] == .enabled)
     #expect(fixture.status["agent"] == .enabled)
     #expect(!recovery.hasPendingRecovery)
+}
+
+@Test @MainActor func pendingUpdateDoesNotRestartServicesOnOldBuild() async throws {
+    let fixture = RecoveryFixture(); defer { fixture.clean() }
+    let recovery = UpdateServiceRecovery(defaults: fixture.defaults)
+    try await recovery.recover(build: "10", operations: fixture.operations())
+    try await recovery.prepare(build: "10", operations: fixture.operations())
+    fixture.actions = []
+    do {
+        try await UpdateServiceRecovery(defaults: fixture.defaults).recover(build: "10", operations: fixture.operations())
+        Issue.record("A pending update must not resume services in the old app")
+    } catch UpdateServiceRecovery.RecoveryError.pendingUpdate {}
+    #expect(fixture.actions.isEmpty)
+    #expect(fixture.status["core"] == .notRegistered)
+    try await recovery.recover(build: "10", operations: fixture.operations(), allowSameBuild: true)
+    #expect(fixture.status["core"] == .enabled)
+}
+
+@Test @MainActor func pendingPreparationRechecksServicesAfterInterruptedStop() async throws {
+    let fixture = RecoveryFixture(); defer { fixture.clean() }
+    let recovery = UpdateServiceRecovery(defaults: fixture.defaults)
+    try await recovery.recover(build: "10", operations: fixture.operations())
+    let normal = fixture.operations()
+    let failing = UpdateServiceRecovery.Operations(status: normal.status, stop: { _ in
+        throw NSError(domain: "test", code: 1)
+    }, start: normal.start)
+    do { try await recovery.prepare(build: "10", operations: failing); Issue.record("Stop failure must be reported") } catch {}
+    #expect(fixture.status["core"] == .enabled)
+    #expect(recovery.hasPendingRecovery)
+    try await recovery.ensureStopped(operations: fixture.operations())
+    #expect(fixture.status["core"] == .notRegistered)
+    fixture.status["agent"] = .enabled // An external change must fail closed.
+    do { try await recovery.ensureStopped(operations: fixture.operations()); Issue.record("Unexpected service must block update") } catch {}
+}
+
+@Test @MainActor func malformedPendingRecoveryFailsClosed() async throws {
+    let fixture = RecoveryFixture(); defer { fixture.clean() }
+    fixture.defaults.set("invalid", forKey: "updateRecovery.pendingServices")
+    do {
+        try await UpdateServiceRecovery(defaults: fixture.defaults).recover(build: "10", operations: fixture.operations())
+        Issue.record("A malformed pending record must not be ignored")
+    } catch {}
+    #expect(fixture.actions.isEmpty)
 }

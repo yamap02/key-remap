@@ -214,3 +214,7 @@
 "ReKey について" = "About ReKey";
 
 "更新処理中" = "Updating";
+"アップデート機能を開始できませんでした。" = "The updater could not be started.";
+"更新処理中は入力サービスを停止します。準備済みの更新は終了時にインストールされる場合があります。" = "Input services are stopped during the update. A prepared update may install when ReKey quits.";
+"更新を確認…" = "Check for Updates…";
+"バックグラウンド項目を開く" = "Open Background Items";

@@ -40,6 +40,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     @Published var saveStatus = "読み込み中…"
     @Published private(set) var recoveringServices = false
     @Published private(set) var updatePrepared = false
+    @Published private(set) var updateWarning: String?
     @Published private(set) var serviceOperationInProgress = false
     private let updateRecovery = UpdateServiceRecovery()
     var accessibility: Bool { runtime.agentAccessibilityReady }
@@ -83,6 +84,10 @@ enum SettingsPage: String, CaseIterable, Identifiable {
                 try await self.prepareServicesForUpdate()
             },
             preparationFailed: { [weak self] error in self?.handleUpdateFailure(error, preparation: true) },
+            pendingInstallFailed: { [weak self] error in
+                self?.updatePrepared = true
+                self?.updateWarning = "保留中の更新を安全に続行できません。「更新を確認」で更新をキャンセルしてください: \(error.localizedDescription)"
+            },
             aborted: { [weak self] error in self?.handleUpdateFailure(error, preparation: false) })
         guard startMonitoring else { return }
         refreshSystem()
@@ -234,7 +239,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
     private var currentBuild: String? { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String }
     private func prepareServicesForUpdate() async throws {
-        guard !recoveringServices, !updatePrepared, !serviceOperationInProgress, currentBuild != nil else {
+        guard !recoveringServices, !serviceOperationInProgress, let build = currentBuild else {
             throw NSError(domain: "ReKey.Update", code: 2, userInfo: [NSLocalizedDescriptionKey: "入力サービスの復旧中です。"])
         }
         recoveringServices = true
@@ -242,23 +247,37 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         saving?.cancel(); saving = nil
         flush()
         guard !dirty else { throw NSError(domain: "ReKey.Update", code: 3, userInfo: [NSLocalizedDescriptionKey: "設定を保存できませんでした。"] ) }
-        try await updateRecovery.prepare(operations: updateServiceOperations())
+        if updatePrepared { try await updateRecovery.ensureStopped(operations: updateServiceOperations()) }
+        else { try await updateRecovery.prepare(build: build, operations: updateServiceOperations()) }
         updatePrepared = true
     }
-    @discardableResult private func recoverServicesAfterUpdate() async -> Bool {
+    @discardableResult private func recoverServicesAfterUpdate(allowSameBuild: Bool = false) async -> Bool {
         guard !recoveringServices, !serviceOperationInProgress, let build = currentBuild else { return false }
         recoveringServices = true
-        defer { recoveringServices = false; updatePrepared = false; refreshSystem() }
-        do { try await updateRecovery.recover(build: build, operations: updateServiceOperations()); return true }
-        catch { self.error = "更新後の入力サービスを復旧できませんでした。権限画面で状態を確認してください: \(error.localizedDescription)"; return false }
+        defer { recoveringServices = false; refreshSystem() }
+        do {
+            try await updateRecovery.recover(build: build, operations: updateServiceOperations(), allowSameBuild: allowSameBuild)
+            updatePrepared = false; updateWarning = nil; return true
+        } catch UpdateServiceRecovery.RecoveryError.pendingUpdate {
+            updatePrepared = true
+            updateWarning = "更新を再開するか、キャンセルしてください。"
+            return false
+        } catch {
+            updatePrepared = updateRecovery.hasPendingRecovery
+            let message = "更新後の入力サービスを復旧できませんでした。バックグラウンド項目を確認してください: \(error.localizedDescription)"
+            if updatePrepared { updateWarning = message } else { self.error = message }
+            return false
+        }
     }
     private func handleUpdateFailure(_ failure: Error, preparation: Bool) {
         guard preparation || updateRecovery.hasPendingRecovery || updatePrepared else { return }
         Task {
-            let recovered = await recoverServicesAfterUpdate()
+            let recovered = await recoverServicesAfterUpdate(allowSameBuild: true)
             if preparation {
                 let message = "更新前に入力サービスを停止できませんでした。サービスを確認し、ReKey を再起動してから更新を再試行してください: \(failure.localizedDescription)"
-                self.error = recovered ? message : message + "\n" + (self.error ?? "入力サービスの復旧状態を確認してください。")
+                if recovered { self.error = message }
+                else if updatePrepared { self.updateWarning = message + "\n" + (self.updateWarning ?? "入力サービスの復旧状態を確認してください。") }
+                else { self.error = message + "\n" + (self.error ?? "入力サービスの復旧状態を確認してください。") }
             }
         }
     }

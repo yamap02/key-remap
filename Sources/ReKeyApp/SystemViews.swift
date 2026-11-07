@@ -141,7 +141,7 @@ struct GeneralView: View {
                     .onChange(of: state.config.global.check_for_updates) { state.updates.setAutomaticChecks(state.config.global.check_for_updates); state.changed() }
                     .disabled(!state.updates.available)
                 Button("今すぐ更新を確認") { state.updates.checkNow() }.disabled(!state.updates.available)
-                Text(L(state.updates.available ? "更新の確認時に配信サーバーへ接続します。インストール時に管理者認証を求められる場合があります。" : "このビルドには更新配信先と公開鍵が設定されていません。"))
+                Text(L(state.updates.startupError != nil ? "アップデート機能を開始できませんでした。" : state.updates.available ? "更新の確認時に配信サーバーへ接続します。インストール時に管理者認証を求められる場合があります。" : "このビルドには更新配信先と公開鍵が設定されていません。"))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("ReKey について") {
