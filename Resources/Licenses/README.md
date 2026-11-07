@@ -21,6 +21,9 @@ License texts were obtained from the component projects. For traceability:
 - <https://github.com/fr00b0/nod/blob/23e4190f3d15964dd1f00677120a788824d74ec9/LICENSE>
 - <https://github.com/foonathan/type_safe/blob/292e8c127037e33d92f8f52dab0f1184993942d0/LICENSE>
 
-The header set included by the Core build was inspected on 2026-11-07. The
-exact revision of every transitive header is not recorded in the vendored tree;
-repeat the dependency and license audit when dependencies or build flags change.
+On 2026-11-07, all 1,147 tracked files under `Vendor/VirtualHID` matched the
+Git blob IDs in upstream commit `ac836ed8a974cd5182495251855cabdb762f50cb`.
+All 912 files in its nested `vendor/vendor/include` directory were tracked.
+That establishes the upstream snapshot, not the original revision of each
+third-party component or the completeness of its notices. Repeat the
+dependency and license audit when dependencies or build flags change.
