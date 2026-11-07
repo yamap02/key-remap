@@ -15,7 +15,7 @@
 - `REKEY_VERSION` は app と Agent の表示版、`REKEY_BUILD_NUMBER` は app と Agent の build 番号および pkg receipt の版。明示しない開発ビルドではそれぞれ `0.1.0` と Git コミット数を使用。公開時には両方を明示し、build 番号はリリースごとに単調増加させる。`scripts/check-appcast-version.py` は署名検証済み feed の全履歴より新しい整数 build を要求する。試験 pkg の展開結果では ID と build 2001 が app と一致した。
 - `swift test`、`scripts/test-core.sh`、開発用 app のビルドと `codesign --verify --deep --strict` が通過。使い捨ての試験鍵で通常 app の zip と署名済み appcast を生成し、署名検証と feed・zip 改ざんの拒否を確認した。試験鍵は一時ディレクトリに作り実行後に削除した。実際の配布鍵による検証ではない。
 - Core は起動時の app・Agent・Core 実行ファイルの実体・属性と親ディレクトリの所有権・書込み権限を100ms間隔で照合し、置換・削除・変更を検知すると入力を解放してプロセスを再起動するまで再取得しない。Core 起動時に app と Agent の両方の署名・所有権が検証できなければ起動を拒否する。オフラインテストで置換・削除・変更・書込み権限と復帰抑止を検証した。これは更新前の停止の代わりにはならない。UI は記録済みの build 番号が変わった時に、有効だった Core と Agent の再登録を試みる。途中失敗時の次回起動での再試行、無効・承認待ちサービスを有効化しないこと、設定ファイル保持をモックと一時設定ファイルで検証した。旧版で build 番号を記録していない初回移行や、pkg で停止済みと判定されるサービス、bundle ID 変更は対象外であり、実機検証が必要。
-- 更新の有無、通信失敗、Sparkle UI、通常 app の root 所有維持、更新中断と物理キー解放、設定保持とサービス再接続は実機未検証。署名済み製品版・公証・GitHub への公開も未実施。
+- 実際の Sparkle 2.9.6 を一時的な試験 app に組み込み、署名済みローカル feed について更新あり・なし、feed 改ざん拒否、通信失敗を確認した（`Tests/Distribution/test-sparkle-probe.py`）。試験は loopback HTTP と使い捨て鍵で、更新ファイルは取得・実行しない。本番 HTTPS・配布鍵・ReKey の更新 UI は未検証。通常 app の root 所有維持、更新中断と物理キー解放、実機での設定保持とサービス再接続も未検証。署名済み製品版・公証・GitHub への公開も未実施。
 
 ## 出荷前に必要なもの
 
