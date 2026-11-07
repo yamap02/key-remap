@@ -120,6 +120,15 @@ import Sparkle
         if !cancellationRequested { aborted(error) }
     }
 
+    // Sparkle aborts a user-cancelled download with a nil error, so
+    // didAbortWithError is not invoked. Wait for the cycle to finish before
+    // restoring services, just as when the user skips a staged update.
+    @objc(userDidCancelDownload:)
+    func userDidCancelDownload(_ updater: SPUUpdater) {
+        preparationGeneration += 1
+        cancellationRequested = true
+    }
+
     @objc(updater:didFinishUpdateCycleForUpdateCheck:error:)
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
         if cancellationRequested {

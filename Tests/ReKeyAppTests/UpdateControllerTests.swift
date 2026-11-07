@@ -121,6 +121,59 @@ import ObjectiveC.runtime
     #expect(recovered)
 }
 
+@Test @MainActor func cancellingDownloadRestoresOnlyAfterCycleFinishes() async throws {
+    var choice: SPUUserUpdateChoice?
+    var recovered = 0
+    let controller = UpdateController(automaticChecks: false, prepare: {}, aborted: { _ in recovered += 1 })
+    let sparkle = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
+    controller.handleUpdateChoice(.install) { choice = $0 }
+    for _ in 0..<100 where choice == nil { try await Task.sleep(for: .milliseconds(1)) }
+    #expect(choice == .install)
+    #expect(controller.responds(to: NSSelectorFromString("userDidCancelDownload:")))
+    controller.userDidCancelDownload(sparkle.updater)
+    #expect(recovered == 0)
+    // Sparkle uses nil for a user-cancelled download, with no didAbort callback.
+    controller.updater(sparkle.updater, didFinishUpdateCycleFor: .updates, error: nil)
+    #expect(recovered == 1)
+    controller.updater(sparkle.updater, didFinishUpdateCycleFor: .updates, error: nil)
+    #expect(recovered == 1)
+}
+
+@Test @MainActor func cancellingDownloadRestoresPreviouslyEnabledService() async throws {
+    let suite = "rekey-cancel-test.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let recovery = UpdateServiceRecovery(defaults: defaults)
+    var status: [String: UpdateServiceRecovery.Status] = ["core": .enabled, "agent": .notRegistered]
+    let operations = UpdateServiceRecovery.Operations(
+        status: { status[$0] ?? .unavailable },
+        stop: { status[$0] = .notRegistered },
+        start: { status[$0] = .enabled })
+    var choice: SPUUserUpdateChoice?
+    var recoveryError: Error?
+    let controller = UpdateController(automaticChecks: false,
+        prepare: { try await recovery.prepare(build: "10", operations: operations) },
+        aborted: { _ in
+            Task { @MainActor in
+                do { try await recovery.recover(build: "10", operations: operations, allowSameBuild: true) }
+                catch { recoveryError = error }
+            }
+        })
+    let sparkle = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
+    controller.handleUpdateChoice(.install) { choice = $0 }
+    for _ in 0..<100 where choice == nil { try await Task.sleep(for: .milliseconds(1)) }
+    #expect(choice == .install)
+    #expect(status["core"] == .notRegistered)
+    controller.userDidCancelDownload(sparkle.updater)
+    #expect(status["core"] == .notRegistered)
+    controller.updater(sparkle.updater, didFinishUpdateCycleFor: .updates, error: nil)
+    for _ in 0..<100 where recovery.hasPendingRecovery { try await Task.sleep(for: .milliseconds(1)) }
+    #expect(recoveryError == nil)
+    #expect(status["core"] == .enabled)
+    #expect(status["agent"] == .notRegistered)
+    #expect(!recovery.hasPendingRecovery)
+}
+
 @Test @MainActor func productionUpdaterCanStartWithConfiguredBundle() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("ReKey-updater-fixture-\(UUID().uuidString).bundle")
     defer { try? FileManager.default.removeItem(at: root) }
