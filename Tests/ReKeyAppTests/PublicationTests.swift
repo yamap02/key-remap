@@ -1,8 +1,18 @@
 import Testing
 import Foundation
 import Combine
+import AppKit
 import ReKeyModel
 @testable import ReKeyApp
+
+@Test @MainActor func terminationWaitsForUpdateServiceOperations() {
+    let delegate = ReKeyApplicationDelegate()
+    defer { TerminationGate.updateServiceOperationInProgress = false }
+    TerminationGate.updateServiceOperationInProgress = true
+    #expect(delegate.applicationShouldTerminate(NSApplication.shared) == .terminateCancel)
+    TerminationGate.updateServiceOperationInProgress = false
+    #expect(delegate.applicationShouldTerminate(NSApplication.shared) == .terminateNow)
+}
 
 private func readyStatus() -> RuntimeStatus {
     RuntimeStatus(paused: false, driver_ready: true, agent_accessibility: true,

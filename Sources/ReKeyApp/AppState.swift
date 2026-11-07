@@ -39,7 +39,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     @Published var selectedDevice = "all"
     @Published var error: String?
     @Published var saveStatus = "読み込み中…"
-    @Published private(set) var recoveringServices = false
+    @Published private(set) var recoveringServices = false {
+        didSet { TerminationGate.updateServiceOperationInProgress = recoveringServices }
+    }
     @Published private(set) var updatePrepared = false
     @Published private(set) var updateWarning: String?
     @Published private(set) var serviceOperationInProgress = false

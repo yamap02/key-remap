@@ -3,7 +3,21 @@ import AppKit
 import ReKeyModel
 import ServiceManagement
 
+@MainActor enum TerminationGate {
+    static var updateServiceOperationInProgress = false
+}
+
+@MainActor final class ReKeyApplicationDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if TerminationGate.updateServiceOperationInProgress {
+            return .terminateCancel
+        }
+        return .terminateNow
+    }
+}
+
 @main struct ReKeyApp: App {
+    @NSApplicationDelegateAdaptor(ReKeyApplicationDelegate.self) private var appDelegate
     @AppStorage("language") private var language = "ja"
     @StateObject private var state = AppState()
     var body: some Scene {
@@ -62,6 +76,6 @@ struct MenuContent: View {
         Button("設定を再読込") { state.reload(reloadEngine: true) }.disabled(state.recoveringServices || state.updatePrepared)
         Divider()
         Button("ReKey をアンインストール…") { state.showUninstall = true; openWindow(id: "settings"); NSApp.activate(ignoringOtherApps: true) }.disabled(state.recoveringServices || state.updatePrepared)
-        Button("ReKey を終了") { NSApp.terminate(nil) }.keyboardShortcut("q")
+        Button("ReKey を終了") { NSApp.terminate(nil) }.keyboardShortcut("q").disabled(state.recoveringServices)
     }
 }
