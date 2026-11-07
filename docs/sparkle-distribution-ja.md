@@ -26,7 +26,15 @@
 
 ## 初回導入とドライバ
 
-現状 ReKey は公式の [Karabiner-DriverKit-VirtualHIDDevice](https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice) に依存する。公式配布元から互換性のある署名・公証済み単独ドライバ pkg を入手し、管理者としてインストールする。macOS が求めるシステム機能拡張をシステム設定で許可し、必要なら再起動する。ReKey の権限画面でバックグラウンド項目と `rekey-core` の入力監視を許可する。EventViewer を使う場合は Agent のアクセシビリティも必要。公式ドライバとその依存物のライセンスを確認・同梱または参照し、`Vendor/VirtualHID/LICENSE.md` と各依存ライセンスを配布時に満たす。
+現状 ReKey は公式の [Karabiner-DriverKit-VirtualHIDDevice](https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice) に依存する。公式配布元から互換性のある署名・公証済み単独ドライバ pkg を入手し、管理者としてインストールする。インストール後、公式 Manager の `activate` を実行してから macOS が求めるシステム機能拡張をシステム設定で許可し、必要なら再起動する。ReKey の権限画面の「入力サービスを登録」で共有 Virtual HID デーモンも登録し、バックグラウンド項目と `rekey-core` の入力監視を許可する。EventViewer を使う場合は Agent のアクセシビリティも必要。公式ドライバの本体は Unlicense。ReKey が組み込む Sparkle のライセンス（同梱コンポーネントの告知を含む）と VirtualHID 本体のライセンスは app の `Contents/Resources/Licenses/` に収録する。Core にコンパイルされるヘッダー依存の個別ライセンスの網羅と収録は未完了で、配布前に確認が必要。
+
+公式 Manager はインストールされた公式 pkg のものを利用する：
+
+```sh
+/Applications/.Karabiner-VirtualHIDDevice-Manager.app/Contents/MacOS/Karabiner-VirtualHIDDevice-Manager activate
+```
+
+公式の案内と異なり、ReKey は権限画面から共有デーモンを SMAppService に登録するため、ターミナルで `sudo` 起動したデーモンを常時動かす手順は不要。固定された依存の package 8.6.0、driver 1.8.0、client protocol 7 に互換のある公式ドライバを使い、配布元と署名・公証を確認する。異なる protocol のデーモンとは通信できない。
 
 既存要件は独自 dext / IOUserClient と性能・復帰時間などを出荷ゲートとしている（[requirements.md](requirements.md)）。公式ドライバの利用だけでこのゲートが免除されるとは判断できず、独自ドライバ要否の決定、entitlement、承認、ライセンスの最終確認が未解決。
 
