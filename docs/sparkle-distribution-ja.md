@@ -39,6 +39,8 @@
 
 2026-11-07 の事前確認では、ローカルの全 Git ref から到達できる 1,469 個の blob のうち、2 MB 以下で先頭 8,192 バイトに NUL のない 1,383 個を対象に、秘密鍵 PEM、GitHub の代表的な token、AWS access key の形式を値を出力せず検索し、一致はなかった。NUL を含む 63 個と 2 MB 超の 23 個は対象外で、これら以外の認証情報形式やリポジトリ外のファイルも検査していない。公開可能と判断する根拠としては不十分であり、公開する ref・全履歴・バイナリを対象とした専用の秘密情報スキャンと内容確認を公開直前に実施する。
 
+同日、[Gitleaks 8.30.1](https://github.com/gitleaks/gitleaks/tree/v8.30.1) の標準ルールで `git --log-opts=--all --ignore-gitleaks-allow --redact=100` を実行し、ローカル全 ref の Git 履歴から検出 0 件を確認した。結果は標準出力からメモリ内で件数だけを集計し、検出値をログやリポジトリへ保存していない。Git 差分に現れないバイナリの中身や未知の形式は対象外であり、公開直前の再スキャン、配布物と履歴のバイナリ・内容確認は引き続き必要。
+
 ## 初回導入とドライバ
 
 現状 ReKey は公式の [Karabiner-DriverKit-VirtualHIDDevice](https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice) に依存する。公式配布元から互換性のある署名・公証済み単独ドライバ pkg を入手し、管理者としてインストールする。インストール後、公式 Manager の `activate` を実行してから macOS が求めるシステム機能拡張をシステム設定で許可し、必要なら再起動する。ReKey の権限画面の「入力サービスを登録」で共有 Virtual HID デーモンも登録し、バックグラウンド項目と `rekey-core` の入力監視を許可する。EventViewer を使う場合は Agent のアクセシビリティも必要。公式ドライバの本体は Unlicense。ReKey が組み込む Sparkle のライセンス（同梱コンポーネントの告知を含む）と VirtualHID 本体のライセンスは app の `Contents/Resources/Licenses/` に収録する。Core がコンパイルするヘッダーを依存解析し、Asio・pqrs・Microsoft GSL・nlohmann/json・nod・type_safe のライセンスと著作権表示も同じ場所に収録する。各ヘッダーの正確な取得元リビジョンは vendored tree に揃っていないため、更新時と公開前に依存・通知を再監査する。
