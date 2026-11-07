@@ -2,7 +2,9 @@ import base64
 import importlib.util
 import os
 from pathlib import Path
+import plistlib
 import subprocess
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -20,6 +22,7 @@ def load(name):
 APP = load('verify-release-signatures')
 INSTALLER = load('verify-installer-signature')
 NOTARY = load('check-notary-result')
+PACKAGE_APP = load('verify-package-app')
 TEAM = 'ABCDEF1234'
 APP_OUTPUT = '''CodeDirectory v=20500 size=100 flags=0x10000(runtime) hashes=1+3 location=embedded
 Authority=Developer ID Application: Test Organization (ABCDEF1234)
@@ -37,6 +40,37 @@ PKG_OUTPUT = '''Package "test.pkg":
 
 
 class ReleaseValidation(unittest.TestCase):
+    def test_package_app_must_match_release_configuration(self):
+        env = {'REKEY_PRODUCT_ID': 'org.vendor.rekey', 'REKEY_VERSION': '1.2.3',
+               'REKEY_BUILD_NUMBER': '42', 'REKEY_FEED_URL': 'https://vendor.test/feed',
+               'REKEY_ED_PUBLIC_KEY': 'public-key'}
+        common = {'ReKeyProductIdentifier': env['REKEY_PRODUCT_ID'],
+                  'CFBundleShortVersionString': env['REKEY_VERSION'],
+                  'CFBundleVersion': env['REKEY_BUILD_NUMBER']}
+        app_info = dict(common, CFBundleIdentifier=env['REKEY_PRODUCT_ID'],
+                        SUFeedURL=env['REKEY_FEED_URL'], SUPublicEDKey=env['REKEY_ED_PUBLIC_KEY'],
+                        SURequireSignedFeed=True, SUVerifyUpdateBeforeExtraction=True,
+                        SUAllowsAutomaticUpdates=False)
+        agent_info = dict(common, CFBundleIdentifier=env['REKEY_PRODUCT_ID'] + '.agent')
+        with tempfile.TemporaryDirectory() as directory:
+            app = Path(directory) / 'ReKey.app'
+            paths = [app / 'Contents/Info.plist',
+                     app / 'Contents/Library/LoginItems/ReKeyAgent.app/Contents/Info.plist']
+            def write(path, info):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(plistlib.dumps(info))
+            write(paths[0], app_info)
+            write(paths[1], agent_info)
+            PACKAGE_APP.validate(app, env)
+            for index, key, bad in ((0, 'CFBundleVersion', '41'), (0, 'SUFeedURL', 'https://other.test'),
+                                    (0, 'SUPublicEDKey', 'other'), (0, 'SURequireSignedFeed', False),
+                                    (1, 'CFBundleIdentifier', 'org.other.agent'), (1, 'CFBundleVersion', '41')):
+                original = (app_info, agent_info)[index]
+                write(paths[index], dict(original, **{key: bad}))
+                with self.subTest(key=key, index=index), self.assertRaises(ValueError):
+                    PACKAGE_APP.validate(app, env)
+                write(paths[index], original)
+
     def test_app_signer_requires_team_identity_runtime_and_timestamp(self):
         APP.validate_description(APP_OUTPUT, TEAM)
         for altered in (APP_OUTPUT.replace(TEAM, 'OTHER12345'),

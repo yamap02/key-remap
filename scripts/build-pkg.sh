@@ -5,7 +5,16 @@ source scripts/build-config.sh
 if [[ "$REKEY_RELEASE" == 1 && ( -z "${REKEY_INSTALLER_IDENTITY:-}" || -z "${REKEY_NOTARY_PROFILE:-}" ) ]]; then
   echo 'Release packages require Developer ID Installer and a notary keychain profile' >&2; exit 64
 fi
-scripts/build-app.sh
+if [[ "$REKEY_RELEASE" == 1 ]]; then
+  # Package exactly the app that was signed, notarized and stapled for the
+  # update archive; rebuilding here would silently create a different app.
+  /usr/bin/python3 scripts/verify-package-app.py build/ReKey.app
+  /usr/bin/python3 scripts/verify-release-signatures.py build/ReKey.app "$REKEY_TEAM_ID"
+  xcrun stapler validate build/ReKey.app
+  spctl --assess --type execute --verbose=2 build/ReKey.app
+else
+  scripts/build-app.sh
+fi
 version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/ReKey.app/Contents/Info.plist)"
 build_number="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' build/ReKey.app/Contents/Info.plist)"
 package_filename="${1:-ReKey-${version}.pkg}"
@@ -19,6 +28,11 @@ trap 'rm -rf "$stage"' EXIT
 if [[ "$REKEY_RELEASE" == 1 ]]; then package_output="$stage/$package_filename"; else package_output="$final_output"; fi
 mkdir -p "$stage/root/Applications" "$stage/scripts"
 ditto --noextattr --noqtn --norsrc build/ReKey.app "$stage/root/Applications/ReKey.app"
+if [[ "$REKEY_RELEASE" == 1 ]]; then
+  /usr/bin/python3 scripts/verify-package-app.py "$stage/root/Applications/ReKey.app"
+  /usr/bin/python3 scripts/verify-release-signatures.py "$stage/root/Applications/ReKey.app" "$REKEY_TEAM_ID"
+  xcrun stapler validate "$stage/root/Applications/ReKey.app"
+fi
 /usr/bin/python3 - "$REKEY_PRODUCT_ID" "$stage/scripts/preinstall" <<'PYTHON'
 from pathlib import Path
 import sys
