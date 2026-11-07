@@ -4,6 +4,7 @@ static NSString *base(void) { return [NSBundle.mainBundle objectForInfoDictionar
 static BOOL cancelMode(void) { return [[NSBundle.mainBundle objectForInfoDictionaryKey:@"FixtureMode"] isEqualToString:@"cancel"]; }
 static BOOL invalidMode(void) { return [[NSBundle.mainBundle objectForInfoDictionaryKey:@"FixtureMode"] isEqualToString:@"invalid"]; }
 static BOOL networkMode(void) { return [[NSBundle.mainBundle objectForInfoDictionaryKey:@"FixtureMode"] isEqualToString:@"network"]; }
+static BOOL crashMode(void) { return [[NSBundle.mainBundle objectForInfoDictionaryKey:@"FixtureMode"] isEqualToString:@"crash"]; }
 static void writeMarker(NSString *filename, NSString *value) { [value writeToFile:[base() stringByAppendingPathComponent:filename] atomically:YES encoding:NSUTF8StringEncoding error:NULL]; }
 static BOOL recover(NSString *action) {
     NSTask *task = [NSTask new];
@@ -34,7 +35,7 @@ static BOOL recover(NSString *action) {
     if (!rejected) { writeMarker(@"error", e.description); exit(93); }
     a();
 }
-- (void)showDownloadInitiatedWithCancellation:(void (^)(void))c { if (cancelMode()) c(); }
+- (void)showDownloadInitiatedWithCancellation:(void (^)(void))c { if (crashMode()) _exit(70); if (cancelMode()) c(); }
 - (void)showDownloadDidReceiveExpectedContentLength:(uint64_t)l {}
 - (void)showDownloadDidReceiveDataOfLength:(uint64_t)l {}
 - (void)showDownloadDidStartExtractingUpdate {}

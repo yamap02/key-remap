@@ -38,6 +38,11 @@ import Foundation
             case "prepare": try await recovery.prepare(build: "100", operations: operations)
             case "recover": try await recovery.recover(build: "101", operations: operations)
             case "cancel": try await recovery.recover(build: "100", operations: operations, allowSameBuild: true)
+            case "hold":
+                do {
+                    try await recovery.recover(build: "100", operations: operations)
+                    throw NSError(domain: "RecoveryFixture", code: 1)
+                } catch UpdateServiceRecovery.RecoveryError.pendingUpdate {}
             default: exit(64)
             }
         } catch {

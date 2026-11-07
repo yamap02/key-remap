@@ -81,7 +81,7 @@ def main():
         thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
         process = None
         try:
-            for name, version in [('cancel', '100'), ('invalid', '100'), ('network', '100'), ('old', '100'), ('new', '101')]:
+            for name, version in [('cancel', '100'), ('invalid', '100'), ('network', '100'), ('crash', '100'), ('old', '100'), ('new', '101')]:
                 app = root / name / 'Fixture.app'
                 contents = app / 'Contents'
                 (contents / 'MacOS').mkdir(parents=True); (contents / 'Frameworks').mkdir()
@@ -89,7 +89,7 @@ def main():
                 framework = contents / 'Frameworks/Sparkle.framework'
                 command('ditto', str(FRAMEWORK), str(framework))
                 command('install_name_tool', '-add_rpath', '@executable_path/../Frameworks', str(contents / 'MacOS/Fixture'))
-                fixture_id = bundle_id + '.' + name if name in ('cancel', 'invalid', 'network') else bundle_id
+                fixture_id = bundle_id + '.' + name if name in ('cancel', 'invalid', 'network', 'crash') else bundle_id
                 info = dict(CFBundleExecutable='Fixture', CFBundleIdentifier=fixture_id, CFBundleName='Fixture',
                             CFBundlePackageType='APPL', CFBundleVersion=version,
                             CFBundleShortVersionString='1.0' if version == '100' else '1.1', LSUIElement=True,
@@ -165,6 +165,24 @@ def main():
                 raise AssertionError(f'Interrupted download recovery failed: {interrupted.stderr[-3000:]}')
             print('PASS interrupted download restored simulated service and preserved app and settings')
             (state / 'actions').unlink()
+            crash = subprocess.run([str(root / 'crash/Fixture.app/Contents/MacOS/Fixture')],
+                                   capture_output=True, text=True, timeout=30)
+            if (crash.returncode != 70 or (state / 'service-core').read_text() != 'notRegistered' or
+                (state / 'actions').read_text().splitlines() != ['stop-core']):
+                raise AssertionError(f'Crash fixture did not stop before exiting: {crash.stderr[-3000:]}')
+            command(str(helper), str(state), bundle_id + '.crash', 'hold')
+            if ((state / 'service-core').read_text() != 'notRegistered' or
+                (state / 'actions').read_text().splitlines() != ['stop-core']):
+                raise AssertionError('Pending recovery unexpectedly restarted the service on the old build')
+            command(str(helper), str(state), bundle_id + '.crash', 'cancel')
+            if ((state / 'service-core').read_text() != 'enabled' or
+                (state / 'service-agent').read_text() != 'notRegistered' or
+                (state / 'actions').read_text().splitlines() != ['stop-core', 'start-core'] or
+                config.read_text() != 'personal-setting' or
+                plistlib.loads((root / 'crash/Fixture.app/Contents/Info.plist').read_bytes())['CFBundleVersion'] != '100'):
+                raise AssertionError('Explicit cancellation after crash did not restore the original state')
+            print('PASS abrupt exit kept simulated service stopped until explicit cancellation')
+            (state / 'actions').unlink()
             with (root / 'stderr').open('w+') as stderr:
                 process = subprocess.Popen([str(root / 'old/Fixture.app/Contents/MacOS/Fixture')],
                                            stdout=subprocess.DEVNULL, stderr=stderr)
@@ -204,10 +222,14 @@ def main():
             network_cache = Path.home() / 'Library/Caches' / (bundle_id + '.network')
             if network_cache.exists():
                 shutil.rmtree(network_cache)
+            crash_cache = Path.home() / 'Library/Caches' / (bundle_id + '.crash')
+            if crash_cache.exists():
+                shutil.rmtree(crash_cache)
             command(str(helper), str(state), bundle_id, 'cleanup')
             command(str(helper), str(state), bundle_id + '.cancel', 'cleanup')
             command(str(helper), str(state), bundle_id + '.invalid', 'cleanup')
             command(str(helper), str(state), bundle_id + '.network', 'cleanup')
+            command(str(helper), str(state), bundle_id + '.crash', 'cleanup')
 
 
 if __name__ == '__main__':
