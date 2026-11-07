@@ -8,6 +8,7 @@
 #include "Engine.hpp"
 #include "VirtualHIDOutput.hpp"
 #include "PowerState.hpp"
+#include "InstalledFilesGuard.hpp"
 #include <IOKit/IOMessage.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <IOKit/hid/IOHIDManager.h>
@@ -29,6 +30,9 @@ struct Trace {uint64_t time;uint32_t device,key,output;bool down,output_down;int
 class Core {
 public:
     rekey::PowerState power;
+    std::unique_ptr<rekey::InstalledFilesGuard> installed_files;
+    uint64_t installed_files_checked=0;
+    bool installed_files_ok=false;
     IONotificationPortRef system_port=nullptr,display_port=nullptr;
     io_connect_t power_connection=IO_OBJECT_NULL;
     io_object_t system_notifier=IO_OBJECT_NULL,display_notifier=IO_OBJECT_NULL;
@@ -139,6 +143,10 @@ public:
     void tick(){
         if(now_ms()-housekeeping>=1000){housekeeping=now_ms();load();conflict=karabiner();input_monitoring=IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)==kIOHIDAccessTypeGranted;}
         output.heartbeat();
+        if(installed_files && (!installed_files_checked || now_ms()-installed_files_checked>=100)){
+            installed_files_checked=now_ms();installed_files_ok=installed_files->unchanged();
+        }
+        if(!installed_files_ok){error="Installed app changed; input stopped until the service restarts";stop();return;}
         if(output_epoch!=output.epoch()){stop();output_epoch=output.epoch();}
         if(power.suspended()||paused||(config.is_object()&&config.at("global").value("disable_on_quit",true)&&now_ms()>ui_deadline)||conflict||!output.ready()){stop();return;}
         if(!input_monitoring){error="Input Monitoring permission is required for rekey-core";stop();return;}
@@ -229,6 +237,7 @@ int main(int argc,const char* argv[]){
         NSString* contents=[[[exe stringByDeletingLastPathComponent] stringByDeletingLastPathComponent] stringByDeletingLastPathComponent];
         NSMutableArray<NSString*>* requirements=[NSMutableArray array];
         NSArray<NSString*>* paths=@[[contents stringByAppendingPathComponent:@"MacOS/ReKey"],[contents stringByAppendingPathComponent:@"Library/LoginItems/ReKeyAgent.app/Contents/MacOS/ReKeyAgent"]];
+        instance.installed_files=std::make_unique<rekey::InstalledFilesGuard>(std::array<std::string,3>{paths[0].fileSystemRepresentation,paths[1].fileSystemRepresentation,exe.fileSystemRepresentation},0,[contents stringByDeletingLastPathComponent].fileSystemRepresentation);
         NSString* productID=@REKEY_PRODUCT_ID;
         NSArray<NSString*>* identifiers=@[productID,[productID stringByAppendingString:@".agent"]];
         for(NSUInteger i=0;i<paths.count;++i){
@@ -240,6 +249,7 @@ int main(int argc,const char* argv[]){
             }
             if(requirement)CFRelease(requirement);if(req)CFRelease(req);if(code)CFRelease(code);
         }
+        if(requirements.count != paths.count){std::cerr<<"Refusing to start without trusted app and Agent signatures and ownership\n";return 78;}
         Listener* delegate=[Listener new];delegate.requirement=[requirements componentsJoinedByString:@" or "];
         NSXPCListener* listener=[[NSXPCListener alloc] initWithMachServiceName:@"jp.example.rekey.core"];listener.delegate=delegate;[listener resume];
         [NSTimer scheduledTimerWithTimeInterval:0.005 repeats:YES block:^(NSTimer*){core->tick();}];
