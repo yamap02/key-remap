@@ -48,6 +48,7 @@ mkdir -p "$app/Contents/Frameworks"
 ditto "$framework_source" "$app/Contents/Frameworks/Sparkle.framework"
 framework="$app/Contents/Frameworks/Sparkle.framework/Versions/B"
 sign_args=(--force --sign "${REKEY_SIGNING_IDENTITY:--}" --options runtime)
+if [[ "$REKEY_RELEASE" == 1 ]]; then sign_args+=(--timestamp); fi
 codesign "${sign_args[@]}" "$framework/XPCServices/Installer.xpc"
 codesign "${sign_args[@]}" --preserve-metadata=entitlements "$framework/XPCServices/Downloader.xpc"
 codesign "${sign_args[@]}" "$framework/Autoupdate"
@@ -85,5 +86,8 @@ if [[ -n "${REKEY_TEAM_ID:-}" ]]; then
     team=$(codesign -dv "$signed" 2>&1 | /usr/bin/awk -F= '$1 == "TeamIdentifier" { print $2 }')
     [[ "$team" == "$REKEY_TEAM_ID" ]] || { echo "Signing Team ID mismatch: $signed" >&2; exit 1; }
   done
+fi
+if [[ "$REKEY_RELEASE" == 1 ]]; then
+  /usr/bin/python3 scripts/verify-release-signatures.py "$app" "$REKEY_TEAM_ID"
 fi
 echo "$app"
