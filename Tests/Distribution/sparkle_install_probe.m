@@ -2,6 +2,7 @@
 #import <Sparkle/Sparkle.h>
 static NSString *base(void) { return [NSBundle.mainBundle objectForInfoDictionaryKey:@"FixtureState"]; }
 static BOOL cancelMode(void) { return [[NSBundle.mainBundle objectForInfoDictionaryKey:@"FixtureMode"] isEqualToString:@"cancel"]; }
+static BOOL invalidMode(void) { return [[NSBundle.mainBundle objectForInfoDictionaryKey:@"FixtureMode"] isEqualToString:@"invalid"]; }
 static void writeMarker(NSString *filename, NSString *value) { [value writeToFile:[base() stringByAppendingPathComponent:filename] atomically:YES encoding:NSUTF8StringEncoding error:NULL]; }
 static BOOL recover(NSString *action) {
     NSTask *task = [NSTask new];
@@ -21,7 +22,16 @@ static BOOL recover(NSString *action) {
 - (void)showUpdateReleaseNotesWithDownloadData:(SPUDownloadData *)d {}
 - (void)showUpdateReleaseNotesFailedToDownloadWithError:(NSError *)e {}
 - (void)showUpdateNotFoundWithError:(NSError *)e acknowledgement:(void (^)(void))a { writeMarker(@"error",e.description); exit(92); }
-- (void)showUpdaterError:(NSError *)e acknowledgement:(void (^)(void))a { writeMarker(@"error",e.description); exit(93); }
+- (void)showUpdaterError:(NSError *)e acknowledgement:(void (^)(void))a {
+    if (!invalidMode()) { writeMarker(@"error",e.description); exit(93); }
+    BOOL rejected = NO;
+    NSError *current = e;
+    for (int depth = 0; current != nil && depth < 8; ++depth, current = current.userInfo[NSUnderlyingErrorKey]) {
+        if ([current.domain isEqualToString:SUSparkleErrorDomain] && current.code == SUValidationError && [current.localizedDescription containsString:@"EdDSA signature does not match"]) { rejected = YES; break; }
+    }
+    if (!rejected) { writeMarker(@"error", e.description); exit(93); }
+    a();
+}
 - (void)showDownloadInitiatedWithCancellation:(void (^)(void))c { if (cancelMode()) c(); }
 - (void)showDownloadDidReceiveExpectedContentLength:(uint64_t)l {}
 - (void)showDownloadDidReceiveDataOfLength:(uint64_t)l {}
@@ -34,10 +44,17 @@ static BOOL recover(NSString *action) {
 @end
 @interface Delegate : NSObject <SPUUpdaterDelegate>
 @property BOOL cancelled;
+@property BOOL aborted;
 @end
 @implementation Delegate
 - (void)userDidCancelDownload:(SPUUpdater *)updater { self.cancelled = YES; }
+- (void)updater:(SPUUpdater *)updater didAbortWithError:(NSError *)error { self.aborted = YES; }
 - (void)updater:(SPUUpdater *)updater didFinishUpdateCycleForUpdateCheck:(SPUUpdateCheck)check error:(NSError *)error {
+    if (invalidMode()) {
+        if (!self.aborted || error == nil || !recover(@"cancel")) { writeMarker(@"error", @"invalid update recovery failed"); exit(99); }
+        writeMarker(@"invalid-recovered", @"restored");
+        exit(0);
+    }
     if (!cancelMode()) return;
     if (!self.cancelled || error != nil || !recover(@"cancel")) { writeMarker(@"error", @"cancel recovery failed"); exit(99); }
     writeMarker(@"cancelled", @"restored");

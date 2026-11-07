@@ -58,7 +58,7 @@ def main():
         thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
         process = None
         try:
-            for name, version in [('cancel', '100'), ('old', '100'), ('new', '101')]:
+            for name, version in [('cancel', '100'), ('invalid', '100'), ('old', '100'), ('new', '101')]:
                 app = root / name / 'Fixture.app'
                 contents = app / 'Contents'
                 (contents / 'MacOS').mkdir(parents=True); (contents / 'Frameworks').mkdir()
@@ -66,7 +66,7 @@ def main():
                 framework = contents / 'Frameworks/Sparkle.framework'
                 command('ditto', str(FRAMEWORK), str(framework))
                 command('install_name_tool', '-add_rpath', '@executable_path/../Frameworks', str(contents / 'MacOS/Fixture'))
-                fixture_id = bundle_id + '.cancel' if name == 'cancel' else bundle_id
+                fixture_id = bundle_id + '.' + name if name in ('cancel', 'invalid') else bundle_id
                 info = dict(CFBundleExecutable='Fixture', CFBundleIdentifier=fixture_id, CFBundleName='Fixture',
                             CFBundlePackageType='APPL', CFBundleVersion=version,
                             CFBundleShortVersionString='1.0' if version == '100' else '1.1', LSUIElement=True,
@@ -96,6 +96,21 @@ def main():
                 plistlib.loads((root / 'cancel/Fixture.app/Contents/Info.plist').read_bytes())['CFBundleVersion'] != '100'):
                 raise AssertionError(f'Cancellation recovery failed: {cancelled.stderr[-3000:]}')
             print('PASS cancelled Sparkle download restored simulated service without replacing app')
+            (state / 'actions').unlink()
+            original = archive.read_bytes()
+            altered = bytearray(original); altered[len(altered) // 2] ^= 1
+            archive.write_bytes(altered)
+            invalid = subprocess.run([str(root / 'invalid/Fixture.app/Contents/MacOS/Fixture')],
+                                     capture_output=True, text=True, timeout=30)
+            archive.write_bytes(original)
+            if (invalid.returncode != 0 or not (state / 'invalid-recovered').exists() or
+                (state / 'service-core').read_text() != 'enabled' or
+                (state / 'service-agent').read_text() != 'notRegistered' or
+                (state / 'actions').read_text().splitlines() != ['stop-core', 'start-core'] or
+                config.read_text() != 'personal-setting' or
+                plistlib.loads((root / 'invalid/Fixture.app/Contents/Info.plist').read_bytes())['CFBundleVersion'] != '100'):
+                raise AssertionError(f'Invalid signature recovery failed: {invalid.stderr[-3000:]}')
+            print('PASS invalid update signature restored simulated service and preserved app and settings')
             (state / 'actions').unlink()
             with (root / 'stderr').open('w+') as stderr:
                 process = subprocess.Popen([str(root / 'old/Fixture.app/Contents/MacOS/Fixture')],
@@ -130,8 +145,12 @@ def main():
             cancel_cache = Path.home() / 'Library/Caches' / (bundle_id + '.cancel')
             if cancel_cache.exists():
                 shutil.rmtree(cancel_cache)
+            invalid_cache = Path.home() / 'Library/Caches' / (bundle_id + '.invalid')
+            if invalid_cache.exists():
+                shutil.rmtree(invalid_cache)
             command(str(helper), str(state), bundle_id, 'cleanup')
             command(str(helper), str(state), bundle_id + '.cancel', 'cleanup')
+            command(str(helper), str(state), bundle_id + '.invalid', 'cleanup')
 
 
 if __name__ == '__main__':
