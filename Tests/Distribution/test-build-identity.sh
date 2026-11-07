@@ -1,6 +1,10 @@
 #!/bin/zsh
 set -euo pipefail
 cd "${0:A:h:h:h}"
+# Fixtures must never inherit real distribution signing or notary settings.
+unset REKEY_SIGNING_IDENTITY REKEY_TEAM_ID REKEY_INSTALLER_IDENTITY REKEY_NOTARY_PROFILE
+unset REKEY_PRODUCT_ID REKEY_FEED_URL REKEY_ED_PUBLIC_KEY
+export REKEY_RELEASE=0
 # These are test identifiers; this does not install or authorize any service.
 if REKEY_PRODUCT_ID='not a bundle id' zsh -c 'source scripts/build-config.sh' >/dev/null 2>&1; then
   echo 'Invalid bundle identifier accepted' >&2; exit 1

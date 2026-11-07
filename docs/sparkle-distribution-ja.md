@@ -13,7 +13,7 @@
 - `check_for_updates` は設定 JSON の自動確認設定として使う。設定画面から手動確認できる。自動ダウンロード・自動インストールは無効。feed URL または EdDSA 公開鍵のない開発ビルドでは更新を開始しない。
 - Sparkle 2.9.6 を固定。`REKEY_FEED_URL` と `REKEY_ED_PUBLIC_KEY` を両方指定して HTTPS feed と公開鍵を埋め込む。feed 署名と更新の展開前検証を必須とする。公開鍵は秘密鍵ではない。
 - `REKEY_VERSION` は app と Agent の表示版、`REKEY_BUILD_NUMBER` は app と Agent の build 番号および pkg receipt の版。明示しない開発ビルドではそれぞれ `0.1.0` と Git コミット数を使用。公開時には両方を明示し、build 番号はリリースごとに単調増加させる。`scripts/check-appcast-version.py` は署名検証済み feed の全履歴より新しい整数 build を要求する。試験 pkg の展開結果では ID と build 2001 が app と一致した。
-- `swift test`、`scripts/test-core.sh`、開発用 app のビルドと `codesign --verify --deep --strict` が通過。使い捨ての試験鍵で通常 app の zip と署名済み appcast を生成し、署名検証と feed・zip 改ざんの拒否を確認した。試験鍵は一時ディレクトリに作り実行後に削除した。実際の配布鍵による検証ではない。
+- `swift test`、`scripts/test-core.sh`、開発用 app のビルドと `codesign --verify --deep --strict` が通過。使い捨ての試験鍵で通常 app の zip と署名済み appcast を生成し、署名検証と feed・zip 改ざんの拒否を確認した。試験鍵は一時ディレクトリに作り実行後に削除した。旧 feed だけを次の作業ディレクトリへ引き継ぐ連続2リリースの試験で、両アーカイブの署名、旧 URL と署名の保持、build の新旧順、重複 build の拒否も確認した。実際の配布鍵による検証ではない。
 - Core は起動時の app・Agent・Core 実行ファイルの実体・属性と親ディレクトリの所有権・書込み権限を100ms間隔で照合し、置換・削除・変更を検知すると入力を解放してプロセスを再起動するまで再取得しない。Core 起動時に app と Agent の両方の署名・所有権が検証できなければ起動を拒否する。オフラインテストで置換・削除・変更・書込み権限と復帰抑止を検証した。Sparkle の更新発見画面で利用者がインストールを選んだ時点で、UI は設定を保存し、有効な Core と Agent の停止完了まで Sparkle に選択を返さない。これにより通常経路では、終了時に自動適用されうる更新の準備より前に停止する。再起動延期コールバックでも停止状態を再検査する。停止前の復旧記録、停止失敗時の更新キャンセル、準備中の更新中断、古い build の保留状態と停止再検査を模擬テストした。同じ旧 build で再起動した保留更新はサービスを停止したままにし、メニューの「更新を確認」から再開またはキャンセルできる。途中終了後は停止状態を再検査する。Sparkle の既存保留更新からの移行、コールバックを経由しない終了経路と macOS の実動作は未検証。UI は記録済みの build 番号が変わった時に、有効だった Core と Agent の再登録を試みる。途中失敗時の次回起動での再試行、無効・承認待ちサービスを有効化しないこと、設定ファイル保持をモックと一時設定ファイルで検証した。旧版で build 番号を記録していない初回移行や、pkg で停止済みと判定されるサービス、bundle ID 変更は対象外であり、実機検証が必要。
 - 署名 identity がない開発版は ad-hoc 署名かつ Hardened Runtime を無効にする。Team ID のない ad-hoc app で Hardened Runtime を有効にすると Sparkle framework の読み込みが拒否されたため。公開用 Developer ID 署名では Hardened Runtime とタイムスタンプを必須とする。
 - Sparkle を使う一時的なユーザー所有 app で、署名済みローカル feed から build 100 → 101 のアプリ置換と再起動、app 外の設定ファイル保持、置換後の ad-hoc 署名整合性を確認した（`Tests/Distribution/test-sparkle-install.py`）。これは通常更新の一部の確認であり、root 所有、ReKey のサービス、Developer ID、公証、HTTPS は対象外。
@@ -47,7 +47,7 @@
 
 ## 署名済み通常 app のリリース準備手順（出荷ゲート通過後）
 
-以下は通常 app 更新の検証が完了した後に配布担当者が使う手順。事前に署名鍵と公証資格情報をキーチェーンへ登録し、Sparkle 2.9.6 の公式配布物の `bin` を `SPARKLE_BIN` に指定する。実際の値は配布担当者が設定する。`REKEY_PRODUCT_ID` や署名チームの変更は TCC・サービス登録への影響があるため、既存利用者向けには移行を検証する。
+以下は通常 app 更新の検証が完了した後に配布担当者が使う手順。事前に署名鍵と公証資格情報をキーチェーンへ登録し、Sparkle 2.9.6 の公式配布物の `bin` を `SPARKLE_BIN` に指定する。`test "$("$SPARKLE_BIN/generate_keys" --account "$SPARKLE_ACCOUNT" -p)" = "$REKEY_ED_PUBLIC_KEY"` でビルドに埋め込む公開鍵が署名用キーチェーンの鍵と一致することを確認し、失敗したら進めない。実際の値は配布担当者が設定する。`REKEY_PRODUCT_ID` や署名チームの変更は TCC・サービス登録への影響があるため、既存利用者向けには移行を検証する。
 
 1. 前回の appcast を HTTPS で取得し、**変更する前に**同じ配布用鍵で検証する。初回のみ、過去リリースがないことを別途確認して feed 比較を省略する。新しい build は前回値より大きく、表示版やタグも配布履歴と重複しないものにする。
 
