@@ -98,6 +98,10 @@ def main():
             feed.write_text(f'''<?xml version="1.0"?><rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><title>Probe</title><item><title>Test</title><sparkle:version>101</sparkle:version><sparkle:shortVersionString>1.1</sparkle:shortVersionString><enclosure url="http://127.0.0.1:{server.server_port}/update.zip" sparkle:edSignature="{signature}" length="{payload.stat().st_size}" type="application/octet-stream"/></item></channel></rss>''')
             command(str(SIGN_UPDATE), '--ed-key-file', str(key_file), str(feed), stdout=subprocess.DEVNULL)
             command('xcrun', 'clang', '-fobjc-arc', '-F', str(FRAMEWORK.parent), '-framework', 'Sparkle', '-framework', 'AppKit',
+                    str(ROOT / 'Tests/Distribution/sparkle_cancel_download.m'), '-o', str(binary))
+            command('install_name_tool', '-add_rpath', '@executable_path/../Frameworks', str(binary))
+            expect('CANCELLED THEN FINISHED NIL')
+            command('xcrun', 'clang', '-fobjc-arc', '-F', str(FRAMEWORK.parent), '-framework', 'Sparkle', '-framework', 'AppKit',
                     str(ROOT / 'Tests/Distribution/sparkle_invalid_update.m'), '-o', str(binary))
             command('install_name_tool', '-add_rpath', '@executable_path/../Frameworks', str(binary))
             expect('ERROR 4005 SIGNATURE_REJECTED 1')
