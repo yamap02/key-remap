@@ -81,6 +81,19 @@ import Foundation
         }
     }
 
+    // Quit can trigger an install-on-quit update. This synchronous check
+    // never changes registrations or waits for launchd during termination.
+    func verifyStopped(operations: Operations) throws {
+        let pending = try pendingRecord().services
+        for name in serviceNames {
+            switch operations.status(name) {
+            case .notRegistered: break
+            case .requiresApproval where !pending.contains(name): break
+            case .enabled, .requiresApproval, .unavailable: throw RecoveryError.unavailable(name)
+            }
+        }
+    }
+
     func recover(build: String, operations: Operations, allowSameBuild: Bool = false) async throws {
         guard !build.isEmpty else { return }
         let previous = defaults.string(forKey: buildKey)

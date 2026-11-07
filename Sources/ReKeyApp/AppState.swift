@@ -42,7 +42,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     @Published private(set) var recoveringServices = false {
         didSet { updateTerminationGate() }
     }
-    @Published private(set) var updatePrepared = false
+    @Published private(set) var updatePrepared = false {
+        didSet { updateTerminationGate() }
+    }
     @Published private(set) var unsafePendingUpdate = false {
         didSet { updateTerminationGate() }
     }
@@ -105,6 +107,16 @@ enum SettingsPage: String, CaseIterable, Identifiable {
                 self?.updateWarning = "保留中の更新を安全に続行できません。「更新を確認」で更新をキャンセルしてください: \(error.localizedDescription)"
             },
             aborted: { [weak self] error in self?.handleUpdateFailure(error, preparation: false) })
+        TerminationGate.verifyPendingUpdate = { [weak self] in
+            guard let self else { return false }
+            return self.verifyServicesBeforeTermination()
+        }
+        // Prevent an early quit before asynchronous startup recovery inspects
+        // a record left by a previous process.
+        if self.updateRecovery.hasPendingRecovery {
+            updatePrepared = true
+            unsafePendingUpdate = true
+        }
         guard startMonitoring else { return }
         refreshSystem()
         Task {
@@ -262,6 +274,20 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     private var currentBuild: String? { buildOverride ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String) }
     private func updateTerminationGate() {
         TerminationGate.updateServiceOperationInProgress = recoveringServices || unsafePendingUpdate
+        TerminationGate.requiresPendingVerification = updatePrepared
+    }
+    func verifyServicesBeforeTermination() -> Bool {
+        guard updatePrepared, !recoveringServices, !serviceOperationInProgress else { return false }
+        do {
+            try updateRecovery.verifyStopped(operations: updateServiceOperations())
+            unsafePendingUpdate = false
+            updateWarning = "更新を再開するか、キャンセルしてください。"
+            return true
+        } catch {
+            unsafePendingUpdate = true
+            updateWarning = "終了前に入力サービスの停止を確認できません。「更新を確認」で更新をキャンセルしてください: \(error.localizedDescription)"
+            return false
+        }
     }
     func prepareServicesForUpdate() async throws {
         guard !recoveringServices, !serviceOperationInProgress, let build = currentBuild else {

@@ -7,7 +7,8 @@ import ReKeyModel
 
 @Test @MainActor func terminationWaitsForUpdateServiceOperations() {
     let delegate = ReKeyApplicationDelegate()
-    defer { TerminationGate.updateServiceOperationInProgress = false }
+    defer { TerminationGate.updateServiceOperationInProgress = false; TerminationGate.requiresPendingVerification = false }
+    TerminationGate.requiresPendingVerification = false
     TerminationGate.updateServiceOperationInProgress = true
     #expect(delegate.applicationShouldTerminate(NSApplication.shared) == .terminateCancel)
     TerminationGate.updateServiceOperationInProgress = false

@@ -48,6 +48,9 @@ struct MenuContent: View {
         if state.updatePrepared {
             Text("更新処理中は入力サービスを停止します。準備済みの更新は終了時にインストールされる場合があります。")
             if let warning = state.updateWarning { Text(warning) }
+            if state.unsafePendingUpdate {
+                Button("入力サービスの停止を再確認") { _ = state.verifyServicesBeforeTermination() }
+            }
             Button("更新を確認…") { state.updates.checkNow() }.disabled(!state.updates.available)
             Button("バックグラウンド項目を開く") { SMAppService.openSystemSettingsLoginItems() }
         }

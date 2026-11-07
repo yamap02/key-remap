@@ -192,7 +192,7 @@ import ReKeyModel
 }
 
 @Test @MainActor func appBlocksTerminationUntilInterruptedServicesAreStoppedOrRestored() async throws {
-    let fixture = RecoveryFixture(); defer { fixture.clean(); TerminationGate.updateServiceOperationInProgress = false }
+    let fixture = RecoveryFixture(); defer { fixture.clean(); TerminationGate.updateServiceOperationInProgress = false; TerminationGate.requiresPendingVerification = false }
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("ReKey-update-state-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: root) }
     let recovery = UpdateServiceRecovery(defaults: fixture.defaults)
@@ -225,6 +225,52 @@ import ReKeyModel
     #expect(!state.unsafePendingUpdate)
     #expect(!TerminationGate.updateServiceOperationInProgress)
     #expect(fixture.status["core"] == .enabled)
+}
+
+@Test @MainActor func pendingUpdateRechecksApprovalBeforeTermination() async throws {
+    let fixture = RecoveryFixture()
+    defer { fixture.clean(); TerminationGate.updateServiceOperationInProgress = false; TerminationGate.requiresPendingVerification = false }
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("ReKey-quit-state-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    fixture.status["agent"] = .requiresApproval
+    let state = AppState(store: ConfigurationStore(url: root.appendingPathComponent("rekey.json")),
+                         startMonitoring: false, updateRecovery: UpdateServiceRecovery(defaults: fixture.defaults),
+                         updateOperations: fixture.operations(), buildOverride: "10")
+    try await state.prepareServicesForUpdate()
+    #expect(TerminationGate.requiresPendingVerification)
+    #expect(state.verifyServicesBeforeTermination())
+    fixture.status["agent"] = .enabled // Approved while the update was pending.
+    #expect(!state.verifyServicesBeforeTermination())
+    #expect(state.unsafePendingUpdate)
+    #expect(TerminationGate.updateServiceOperationInProgress)
+    #expect(fixture.status["agent"] == .enabled) // Don't silently alter user's approval.
+    fixture.status["agent"] = .requiresApproval
+    #expect(state.verifyServicesBeforeTermination())
+    #expect(!state.unsafePendingUpdate)
+    #expect(!TerminationGate.updateServiceOperationInProgress)
+}
+
+@Test @MainActor func startupBlocksQuitBeforePendingRecordIsRechecked() async throws {
+    let fixture = RecoveryFixture()
+    defer { fixture.clean(); TerminationGate.updateServiceOperationInProgress = false; TerminationGate.requiresPendingVerification = false }
+    let recovery = UpdateServiceRecovery(defaults: fixture.defaults)
+    let normal = fixture.operations()
+    let interrupted = UpdateServiceRecovery.Operations(status: normal.status, stop: { _ in
+        throw NSError(domain: "test", code: 1)
+    }, start: normal.start)
+    do { try await recovery.prepare(build: "10", operations: interrupted); Issue.record("Stop must fail") } catch {}
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("ReKey-startup-state-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let state = AppState(store: ConfigurationStore(url: root.appendingPathComponent("rekey.json")),
+                         startMonitoring: false, updateRecovery: recovery,
+                         updateOperations: normal, buildOverride: "10")
+    #expect(state.updatePrepared)
+    #expect(state.unsafePendingUpdate)
+    #expect(TerminationGate.updateServiceOperationInProgress)
+    #expect(TerminationGate.requiresPendingVerification)
+    #expect(!(await state.recoverServicesAfterUpdate()))
+    #expect(!state.unsafePendingUpdate)
+    #expect(fixture.status["core"] == .notRegistered)
 }
 
 @Test @MainActor func malformedPendingRecoveryFailsClosed() async throws {
