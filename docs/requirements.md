@@ -49,7 +49,7 @@
 - ログイン後 2 秒、ログイン画面、クラッシュ後 1 秒復帰、スリープ/Bluetooth 復帰 50 回の試験は未実施。SMAppService plist には KeepAlive と 1 秒の throttle を指定しているが、これだけでは復帰時間の証明にならない。
 - 実在する Team ID / bundle ID、Developer ID Application / Installer、DriverKit entitlement、独自 dext の署名と承認が必要。現在の Mac では有効な codesigning identity が 0 件。
 - 開発用未公証 pkg を管理者認証でインストール済み。アンインストール UI はサービスとログイン登録を解除し app/設定をゴミ箱へ移動する。出荷用の署名・公証・更新時停止・アンインストールのエンドツーエンド検証は未完了。
-- Sparkle 2、EdDSA appcast、更新パッケージの検証、Homebrew Cask は未実装。配布 URL と署名鍵が必要。
+- Sparkle 2 と試験用署名 appcast は実装・検証中。実配布 URL、署名鍵、更新安全性と公証は未完了。詳細は [配布準備](sparkle-distribution-ja.md)。Homebrew Cask は未実装。
 - SIP を変更していない。署名/TCC/DriverKit の承認を迂回する実装はない。
 - マイナー OS のベータ試験、macOS 26 用別ブランチ、サポート運用は未着手。
 

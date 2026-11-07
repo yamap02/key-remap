@@ -1,0 +1,35 @@
+# Sparkle 配布の準備と出荷ゲート（2026-11-07）
+
+**一般公開不可。** Sparkle の組込みは開発段階であり、製品 ID、実証明書、公証、更新の実機安全性、ドライバの出荷要件は未完了。この文書は未確認のコマンドを完成済みのリリース手順として扱わない。
+
+## 更新方式の判断
+
+通常の app 更新を優先して検証する。現在の pkg は `/Applications/ReKey.app` を root:wheel、他ユーザーから書き込み不可にし、Core はその app と Agent の指定要件を XPC に適用する。Sparkle 2.9.6 の通常インストーラは旧 app の所有者・グループを新 app に合わせようとするが、失敗を致命的エラーにしない。したがってコードの存在だけでは root 所有が維持される保証にならない。更新後に全階層の所有権とモード、Core の新しい署名要件および接続、Agent・Core の旧プロセス停止を確認する必要がある。
+
+成立しない場合のみ flat pkg を検討する。pkg 更新には管理者認証が毎回必要で、サイレントインストール、差分更新、通常の `generate_appcast` の利用に制限がある。現行 pkg の preinstall は Core の bootout の失敗を無視し、postinstall は権限を設定するだけなので、安全な停止・失敗時の復旧や再登録は未保証。現状の pkg を Sparkle 更新として配布しない。[Sparkle package updates](https://sparkle-project.org/documentation/package-updates/) / [publishing](https://sparkle-project.org/documentation/publishing/)
+
+## 現在の実装と検証
+
+- `check_for_updates` は設定 JSON の自動確認設定として使う。設定画面から手動確認できる。自動ダウンロード・自動インストールは無効。feed URL または EdDSA 公開鍵のない開発ビルドでは更新を開始しない。
+- Sparkle 2.9.6 を固定。`REKEY_FEED_URL` と `REKEY_ED_PUBLIC_KEY` を両方指定して HTTPS feed と公開鍵を埋め込む。feed 署名と更新の展開前検証を必須とする。公開鍵は秘密鍵ではない。
+- `REKEY_VERSION` は app と Agent の表示版および pkg 版、`REKEY_BUILD_NUMBER` は app と Agent の build 番号。明示しない開発ビルドではそれぞれ `0.1.0` と Git コミット数を使用。公開時には両方を明示し、build 番号はリリースごとに単調増加させる。現行 pkg のバージョンと app build 番号の順序チェックは未実装。
+- `swift test`、`scripts/test-core.sh`、開発用 app のビルドと `codesign --verify --deep --strict` が通過。使い捨ての試験鍵で通常 app の zip と署名済み appcast を生成し、署名検証と feed・zip 改ざんの拒否を確認した。試験鍵は一時ディレクトリに作り実行後に削除した。実際の配布鍵による検証ではない。
+- 更新の有無、通信失敗、Sparkle UI、通常 app の root 所有維持、更新中断と物理キー解放、設定保持とサービス再接続は実機未検証。署名済み製品版・公証・GitHub への公開も未実施。
+
+## 出荷前に必要なもの
+
+1. 配布者の Apple Developer Program、実際の Team ID と一意な製品 bundle ID、Developer ID Application 証明書、pkg が必要なら Developer ID Installer 証明書を用意する。現在 `jp.example.rekey` と Agent、サービス名などがコードに固定されており変更・移行設計が必要。Team ID や製品 ID が設定可能になったとはまだ言えない。
+2. `xcrun notarytool store-credentials` 等で公証資格情報をキーチェーンに保管し、パスワード、API 秘密鍵、署名鍵をリポジトリ、コマンド履歴、CI ログへ書かない。専用の Sparkle EdDSA 鍵を `generate_keys --account <組織専用名>` でキーチェーンに生成し、公開鍵のみビルド設定に渡す。秘密鍵は管理された安全な場所にバックアップし、紛失・ローテーション方針を決める。
+3. GitHub の公開リポジトリと Releases を決め、HTTPS の安定した feed URL と、各バージョンに固定された HTTPS 更新ファイル URL を設計する。`latest/download` を feed に使う場合は Release 公開時の切替・キャッシュと、過去アイテムが元のバージョンの asset を指すことを検証する。認証が必要な private Release の URL を公開 feed とみなさない。
+4. 実際の識別子・署名で App、Agent、Core と Sparkle の各ヘルパーを Developer ID 署名し、Apple に公証・staple する。`codesign`、`spctl`、`stapler` と配布アーカイブ展開後の署名を確認する。公開前の署名・公証自動化と本番向け失敗時停止処理は未実装。
+5. クリーンな試験 Mac で旧版→新版を検証し、更新の有無、不正な署名、通信断、署名付き feed の改ざん、管理者認証の拒否、インストール中断、再起動、設定保持、Core/Agent の再接続と物理キーボード解放を確認する。`disable_on_quit=false` でも更新で入力を確実に解放する仕組みを実装・検証する。現在の通常終了通知は非同期であり、設定により Core は入力を保持しうる。検証前に公開しない。
+
+## 初回導入とドライバ
+
+現状 ReKey は公式の [Karabiner-DriverKit-VirtualHIDDevice](https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice) に依存する。公式配布元から互換性のある署名・公証済み単独ドライバ pkg を入手し、管理者としてインストールする。macOS が求めるシステム機能拡張をシステム設定で許可し、必要なら再起動する。ReKey の権限画面でバックグラウンド項目と `rekey-core` の入力監視を許可する。EventViewer を使う場合は Agent のアクセシビリティも必要。公式ドライバとその依存物のライセンスを確認・同梱または参照し、`Vendor/VirtualHID/LICENSE.md` と各依存ライセンスを配布時に満たす。
+
+既存要件は独自 dext / IOUserClient と性能・復帰時間などを出荷ゲートとしている（[requirements.md](requirements.md)）。公式ドライバの利用だけでこのゲートが免除されるとは判断できず、独自ドライバ要否の決定、entitlement、承認、ライセンスの最終確認が未解決。
+
+## 障害時の暫定復旧
+
+安全な別入力手段を確保し、ReKey の設定画面から入力サービスを停止する。アプリが操作できない場合は macOS のバックグラウンド項目で ReKey のサービスを無効化し、必要なら再起動する。設定は `~/Library/Application Support/ReKey/` にあり、削除や上書き前にバックアップする。サービス登録の承認、入力監視、ドライバ拡張を再確認し、署名と公証を確認した既知の旧版から復旧する。更新失敗からの自動復旧は未実装・未検証。
