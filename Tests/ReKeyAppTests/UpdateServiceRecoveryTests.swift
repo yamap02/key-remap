@@ -191,6 +191,42 @@ import ReKeyModel
     #expect(recovery.hasPendingRecovery)
 }
 
+@Test @MainActor func appBlocksTerminationUntilInterruptedServicesAreStoppedOrRestored() async throws {
+    let fixture = RecoveryFixture(); defer { fixture.clean(); TerminationGate.updateServiceOperationInProgress = false }
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("ReKey-update-state-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let recovery = UpdateServiceRecovery(defaults: fixture.defaults)
+    let normal = fixture.operations()
+    var stopFails = true
+    let operations = UpdateServiceRecovery.Operations(status: normal.status, stop: { name in
+        if stopFails { throw NSError(domain: "test", code: 1) }
+        try await normal.stop(name)
+    }, start: normal.start)
+    let state = AppState(store: ConfigurationStore(url: root.appendingPathComponent("rekey.json")),
+                         startMonitoring: false, updateRecovery: recovery,
+                         updateOperations: operations, buildOverride: "10")
+    do { try await state.prepareServicesForUpdate(); Issue.record("A failed stop must fail preparation") } catch {}
+    #expect(state.updatePrepared)
+    #expect(state.unsafePendingUpdate)
+    #expect(TerminationGate.updateServiceOperationInProgress)
+    #expect(fixture.status["core"] == .enabled)
+    #expect(!(await state.recoverServicesAfterUpdate()))
+    #expect(state.unsafePendingUpdate)
+    #expect(TerminationGate.updateServiceOperationInProgress)
+
+    stopFails = false
+    #expect(!(await state.recoverServicesAfterUpdate())) // Still pending, but now safely stopped.
+    #expect(state.updatePrepared)
+    #expect(!state.unsafePendingUpdate)
+    #expect(!TerminationGate.updateServiceOperationInProgress)
+    #expect(fixture.status["core"] == .notRegistered)
+    #expect(await state.recoverServicesAfterUpdate(allowSameBuild: true))
+    #expect(!state.updatePrepared)
+    #expect(!state.unsafePendingUpdate)
+    #expect(!TerminationGate.updateServiceOperationInProgress)
+    #expect(fixture.status["core"] == .enabled)
+}
+
 @Test @MainActor func malformedPendingRecoveryFailsClosed() async throws {
     let fixture = RecoveryFixture(); defer { fixture.clean() }
     fixture.defaults.set("invalid", forKey: "updateRecovery.pendingServices")

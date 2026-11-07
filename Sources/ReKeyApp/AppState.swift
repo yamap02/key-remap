@@ -48,7 +48,10 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
     @Published private(set) var updateWarning: String?
     @Published private(set) var serviceOperationInProgress = false
-    private let updateRecovery = UpdateServiceRecovery()
+    private let updateRecovery: UpdateServiceRecovery
+    private let updateOperationsOverride: UpdateServiceRecovery.Operations?
+    private let buildOverride: String?
+    private let monitorSystem: Bool
     var accessibility: Bool { runtime.agentAccessibilityReady }
     var inputMonitoringReady: Bool { runtime.inputMonitoringReady }
     var eventViewerReady: Bool { runtime.eventViewerReady }
@@ -77,9 +80,15 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     var operational: Bool { daemonStatus == "稼働中" && driverActive && !config.global.paused }
     var statusTitle: String { recoveringServices || updatePrepared ? "更新処理中" : isPaused ? "一時停止中" : operational ? "リマップ有効" : "セットアップが必要です" }
     var statusColor: Color { recoveringServices || updatePrepared ? .orange : isPaused ? .secondary : operational ? .green : .orange }
-    init(store: ConfigurationStore = ConfigurationStore(), runtime: RuntimeClient = RuntimeClient(), startMonitoring: Bool = true) {
+    init(store: ConfigurationStore = ConfigurationStore(), runtime: RuntimeClient = RuntimeClient(), startMonitoring: Bool = true,
+         updateRecovery: UpdateServiceRecovery? = nil, updateOperations: UpdateServiceRecovery.Operations? = nil,
+         buildOverride: String? = nil) {
         self.store = store
         self.runtime = runtime
+        self.updateRecovery = updateRecovery ?? UpdateServiceRecovery()
+        self.updateOperationsOverride = updateOperations
+        self.buildOverride = buildOverride
+        self.monitorSystem = startMonitoring
         // Runtime publishes status/errors only; EventViewer owns its own log updates.
         runtimeChanges = runtime.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         showWelcome = !FileManager.default.fileExists(atPath: store.url.path)
@@ -233,6 +242,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         }
     }
     private func updateServiceOperations() -> UpdateServiceRecovery.Operations {
+        if let updateOperationsOverride { return updateOperationsOverride }
         let services = ["core": SMAppService.daemon(plistName: ReKeyServiceIdentity.coreName() + ".plist"),
                         "agent": SMAppService.agent(plistName: ReKeyServiceIdentity.agentName() + ".plist")]
         return UpdateServiceRecovery.Operations(
@@ -249,16 +259,16 @@ enum SettingsPage: String, CaseIterable, Identifiable {
             start: { name in if let service = services[name] { try service.register() } }
         )
     }
-    private var currentBuild: String? { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String }
+    private var currentBuild: String? { buildOverride ?? (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String) }
     private func updateTerminationGate() {
         TerminationGate.updateServiceOperationInProgress = recoveringServices || unsafePendingUpdate
     }
-    private func prepareServicesForUpdate() async throws {
+    func prepareServicesForUpdate() async throws {
         guard !recoveringServices, !serviceOperationInProgress, let build = currentBuild else {
             throw NSError(domain: "ReKey.Update", code: 2, userInfo: [NSLocalizedDescriptionKey: "入力サービスの復旧中です。"])
         }
         recoveringServices = true
-        defer { recoveringServices = false; refreshSystem() }
+        defer { recoveringServices = false; if monitorSystem { refreshSystem() } }
         do {
             try saveBeforeUpdate()
             if updatePrepared { try await updateRecovery.ensureStopped(operations: updateServiceOperations()) }
@@ -275,10 +285,10 @@ enum SettingsPage: String, CaseIterable, Identifiable {
             throw error
         }
     }
-    @discardableResult private func recoverServicesAfterUpdate(allowSameBuild: Bool = false) async -> Bool {
+    @discardableResult func recoverServicesAfterUpdate(allowSameBuild: Bool = false) async -> Bool {
         guard !recoveringServices, !serviceOperationInProgress, let build = currentBuild else { return false }
         recoveringServices = true
-        defer { recoveringServices = false; refreshSystem() }
+        defer { recoveringServices = false; if monitorSystem { refreshSystem() } }
         do {
             try await updateRecovery.recover(build: build, operations: updateServiceOperations(), allowSameBuild: allowSameBuild)
             updatePrepared = false; unsafePendingUpdate = false; updateWarning = nil; return true
