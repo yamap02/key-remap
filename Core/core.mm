@@ -251,7 +251,7 @@ int main(int argc,const char* argv[]){
         }
         if(requirements.count != paths.count){std::cerr<<"Refusing to start without trusted app and Agent signatures and ownership\n";return 78;}
         Listener* delegate=[Listener new];delegate.requirement=[requirements componentsJoinedByString:@" or "];
-        NSXPCListener* listener=[[NSXPCListener alloc] initWithMachServiceName:@"jp.example.rekey.core"];listener.delegate=delegate;[listener resume];
+        NSXPCListener* listener=[[NSXPCListener alloc] initWithMachServiceName:[productID stringByAppendingString:@".core"]];listener.delegate=delegate;[listener resume];
         [NSTimer scheduledTimerWithTimeInterval:0.005 repeats:YES block:^(NSTimer*){core->tick();}];
         signal(SIGTERM,SIG_IGN);signal(SIGINT,SIG_IGN);
         dispatch_source_t termination=dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL,SIGTERM,0,dispatch_get_main_queue());

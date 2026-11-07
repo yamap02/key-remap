@@ -4,6 +4,7 @@ import AppKit
 import IOKit.hid
 import ServiceManagement
 import ReKeyModel
+import ReKeyIPC
 
 struct KeyboardDevice: Identifiable, Equatable {
     var id: String { identity.label }
@@ -193,7 +194,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
     func revealConfig() { NSWorkspace.shared.selectFile(store.url.path, inFileViewerRootedAtPath: store.url.deletingLastPathComponent().path) }
     func openPrivacy(_ section: String) { if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(section)") { NSWorkspace.shared.open(url) } }
-    func requestAgentPermissions() { DistributedNotificationCenter.default().postNotificationName(NSNotification.Name("jp.example.rekey.agent.request-permissions"), object: nil, userInfo: nil, deliverImmediately: true) }
+    func requestAgentPermissions() { DistributedNotificationCenter.default().postNotificationName(NSNotification.Name(ReKeyServiceIdentity.permissionNotification()), object: nil, userInfo: nil, deliverImmediately: true) }
     func requestAccessibility() { requestAgentPermissions() }
     func requestInputMonitoring() {
         runtime.requestInputMonitoring()
@@ -221,8 +222,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         }
     }
     private func updateServiceOperations() -> UpdateServiceRecovery.Operations {
-        let services = ["core": SMAppService.daemon(plistName: "jp.example.rekey.core.plist"),
-                        "agent": SMAppService.agent(plistName: "jp.example.rekey.agent.plist")]
+        let services = ["core": SMAppService.daemon(plistName: ReKeyServiceIdentity.coreName() + ".plist"),
+                        "agent": SMAppService.agent(plistName: ReKeyServiceIdentity.agentName() + ".plist")]
         return UpdateServiceRecovery.Operations(
             status: { name in
                 guard let service = services[name] else { return .unavailable }
@@ -288,8 +289,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
     private func registerCurrentServices() async {
         var services = [
-            ("rekey-core", SMAppService.daemon(plistName: "jp.example.rekey.core.plist")),
-            ("ReKey Agent", SMAppService.agent(plistName: "jp.example.rekey.agent.plist"))
+            ("rekey-core", SMAppService.daemon(plistName: ReKeyServiceIdentity.coreName() + ".plist")),
+            ("ReKey Agent", SMAppService.agent(plistName: ReKeyServiceIdentity.agentName() + ".plist"))
         ]
         if FileManager.default.isExecutableFile(atPath: driverDaemonPath) {
             services.insert(("Virtual HID Daemon", SMAppService.daemon(plistName: "org.pqrs.service.daemon.Karabiner-VirtualHIDDevice-Daemon.plist")), at: 0)
@@ -321,7 +322,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
     private func stopServices() throws {
         // The official Virtual HID daemon is shared with other clients; keep it registered.
-        let services = [SMAppService.daemon(plistName: "jp.example.rekey.core.plist"), SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist"), SMAppService.agent(plistName: "jp.example.rekey.agent.plist")]
+        let services = [SMAppService.daemon(plistName: ReKeyServiceIdentity.coreName() + ".plist"), SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist"), SMAppService.agent(plistName: ReKeyServiceIdentity.agentName() + ".plist")]
         for service in services where service.status != .notRegistered && service.status != .notFound { try service.unregister() }
     }
     func restartServices() {
@@ -330,7 +331,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         Task {
             defer { serviceOperationInProgress = false }
             do {
-                let services = [SMAppService.daemon(plistName: "jp.example.rekey.core.plist"), SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist"), SMAppService.agent(plistName: "jp.example.rekey.agent.plist")]
+                let services = [SMAppService.daemon(plistName: ReKeyServiceIdentity.coreName() + ".plist"), SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist"), SMAppService.agent(plistName: ReKeyServiceIdentity.agentName() + ".plist")]
                 // The async overload waits for the old process to exit before re-registering.
                 for service in services where service.status != .notRegistered && service.status != .notFound {
                     try await service.unregister()

@@ -32,6 +32,7 @@ exit 2
             for name in services:
                 (root / name).touch()
             script = (ROOT / 'Resources/pkg-preinstall').read_text()
+            script = script.replace('@REKEY_CORE_LABEL@', 'org.example.product.core')
             script = script.replace('/bin/launchctl', str(launchctl))
             script = script.replace('/usr/bin/pgrep', str(pgrep))
             script = script.replace('/bin/sleep', str(sleep))
@@ -40,11 +41,12 @@ exit 2
 
     def test_absent_and_cleanly_stopped_services(self):
         self.assertEqual(self.run_script().returncode, 0)
-        self.assertEqual(self.run_script(services=['jp.example.rekey.core', 'jp.example.rekey.vhid']).returncode, 0)
+        self.assertEqual(self.run_script(services=['org.example.product.core', 'jp.example.rekey.core', 'jp.example.rekey.vhid']).returncode, 0)
 
     def test_refuses_failed_inspection_stop_or_live_process(self):
         for kwargs in ({'failure': 'inspect'},
                        {'services': ['jp.example.rekey.core'], 'failure': 'bootout'},
+                       {'services': ['org.example.product.core'], 'failure': 'bootout'},
                        {'services': ['jp.example.rekey.core'], 'failure': 'remains'},
                        {'alive': True}, {'failure': 'pgrep'}):
             with self.subTest(kwargs=kwargs):

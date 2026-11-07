@@ -6,6 +6,10 @@ if [[ ! "$REKEY_PRODUCT_ID" =~ '^[A-Za-z0-9]+([.-][A-Za-z0-9]+)*[.][A-Za-z0-9]+(
   echo 'REKEY_PRODUCT_ID must be a dotted bundle identifier using letters, digits and hyphens' >&2
   exit 64
 fi
+# Leave room for service suffixes within launchd's Mach name limit.
+if (( ${#REKEY_PRODUCT_ID} > 120 )); then
+  echo 'REKEY_PRODUCT_ID is too long for service names' >&2; exit 64
+fi
 if [[ -n "${REKEY_TEAM_ID:-}" ]]; then
   if [[ ! "$REKEY_TEAM_ID" =~ '^[A-Z0-9]{10}$' ]]; then echo 'REKEY_TEAM_ID must be a 10-character Team ID' >&2; exit 64; fi
   if [[ -z "${REKEY_SIGNING_IDENTITY:-}" || "$REKEY_SIGNING_IDENTITY" == '-' ]]; then

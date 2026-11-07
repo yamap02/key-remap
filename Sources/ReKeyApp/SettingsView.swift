@@ -31,7 +31,7 @@ struct SettingsView: View {
                         Circle().fill(state.statusColor).frame(width: 7, height: 7)
                         Text(L(state.statusTitle)).font(.caption.weight(.semibold))
                     }
-                    Text("ReKey  ·  v0.1.0").font(.caption2).foregroundStyle(.secondary)
+                    Text("ReKey  ·  v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")").font(.caption2).foregroundStyle(.secondary)
                 }.padding(20)
             }.navigationSplitViewColumnWidth(min: 210, ideal: 220, max: 250)
         } detail: {

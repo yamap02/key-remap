@@ -34,6 +34,7 @@ ditto Resources/Licenses "$app/Contents/Resources/Licenses"
 cp .build/checkouts/Sparkle/LICENSE "$app/Contents/Resources/Licenses/Sparkle.txt"
 cp Vendor/VirtualHID/LICENSE.md "$app/Contents/Resources/Licenses/Karabiner-DriverKit-VirtualHIDDevice.txt"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $REKEY_PRODUCT_ID" "$app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :ReKeyProductIdentifier string $REKEY_PRODUCT_ID" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$app/Contents/Info.plist"
 if [[ -n "${REKEY_FEED_URL:-}" ]]; then
@@ -71,16 +72,30 @@ cp build/AppIcon.icns "$agent/Contents/Resources/AppIcon.icns"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$agent/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleExecutable ReKeyAgent' "$agent/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${REKEY_PRODUCT_ID}.agent" "$agent/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :ReKeyProductIdentifier string $REKEY_PRODUCT_ID" "$agent/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleName ReKeyAgent' "$agent/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName ReKey Agent' "$agent/Contents/Info.plist"
-cp Resources/jp.example.rekey.agent.plist "$app/Contents/Library/LaunchAgents/"
+/usr/bin/python3 - "$REKEY_PRODUCT_ID" "$app" <<'PYTHON'
+import pathlib, plistlib, sys
+product, app = sys.argv[1], pathlib.Path(sys.argv[2])
+for role, folder in [('core', 'LaunchDaemons'), ('agent', 'LaunchAgents')]:
+    source = pathlib.Path('Resources') / f'jp.example.rekey.{role}.plist'
+    data = plistlib.loads(source.read_bytes())
+    label = f'{product}.{role}'
+    data['Label'] = label
+    if role == 'core':
+        data['MachServices'] = {label: True}
+    dest = app / 'Contents/Library' / folder / f'{label}.plist'
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(plistlib.dumps(data))
+PYTHON
 codesign "${sign_args[@]}" "$agent"
 if [[ -f build/rekey-core ]]; then
   mkdir -p "$app/Contents/Library/LaunchDaemons" "$app/Contents/Library/HelperTools"
   rm -f "$app/Contents/Library/HelperTools/rekey-vhid"
   cp build/rekey-core build/rekey-bench "$app/Contents/Library/HelperTools/"
   rm -f "$app/Contents/Library/LaunchDaemons/jp.example.rekey.agent.plist"
-  cp Resources/jp.example.rekey.core.plist Resources/jp.example.rekey.vhid.plist "$app/Contents/Library/LaunchDaemons/"
+  cp Resources/jp.example.rekey.vhid.plist "$app/Contents/Library/LaunchDaemons/"
   cp Vendor/VirtualHID/files/LaunchDaemons/org.pqrs.service.daemon.Karabiner-VirtualHIDDevice-Daemon.plist "$app/Contents/Library/LaunchDaemons/"
   codesign "${sign_args[@]}" "$app/Contents/Library/HelperTools/rekey-core"
   codesign "${sign_args[@]}" "$app/Contents/Library/HelperTools/rekey-bench"

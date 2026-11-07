@@ -16,6 +16,11 @@ REKEY_PRODUCT_ID=org.example.rekeytest REKEY_BUILD_NUMBER=2001 REKEY_VERSION=1.2
 app=build/ReKey.app
 [[ $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist") == org.example.rekeytest ]]
 [[ $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Library/LoginItems/ReKeyAgent.app/Contents/Info.plist") == org.example.rekeytest.agent ]]
+[[ $(/usr/libexec/PlistBuddy -c 'Print :ReKeyProductIdentifier' "$app/Contents/Info.plist") == org.example.rekeytest ]]
+[[ $(/usr/libexec/PlistBuddy -c 'Print :ReKeyProductIdentifier' "$app/Contents/Library/LoginItems/ReKeyAgent.app/Contents/Info.plist") == org.example.rekeytest ]]
+[[ $(/usr/libexec/PlistBuddy -c 'Print :Label' "$app/Contents/Library/LaunchDaemons/org.example.rekeytest.core.plist") == org.example.rekeytest.core ]]
+[[ $(/usr/libexec/PlistBuddy -c 'Print :MachServices:org.example.rekeytest.core' "$app/Contents/Library/LaunchDaemons/org.example.rekeytest.core.plist") == true ]]
+[[ $(/usr/libexec/PlistBuddy -c 'Print :Label' "$app/Contents/Library/LaunchAgents/org.example.rekeytest.agent.plist") == org.example.rekeytest.agent ]]
 [[ $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist") == 2001 ]]
 [[ $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Library/LoginItems/ReKeyAgent.app/Contents/Info.plist") == 2001 ]]
 /usr/bin/strings "$app/Contents/Library/HelperTools/rekey-core" | rg -q '^org[.]example[.]rekeytest$'

@@ -19,7 +19,13 @@ trap 'rm -rf "$stage"' EXIT
 if [[ "$REKEY_RELEASE" == 1 ]]; then package_output="$stage/$package_filename"; else package_output="$final_output"; fi
 mkdir -p "$stage/root/Applications" "$stage/scripts"
 ditto --noextattr --noqtn --norsrc build/ReKey.app "$stage/root/Applications/ReKey.app"
-cp Resources/pkg-preinstall "$stage/scripts/preinstall"
+/usr/bin/python3 - "$REKEY_PRODUCT_ID" "$stage/scripts/preinstall" <<'PYTHON'
+from pathlib import Path
+import sys
+source = Path('Resources/pkg-preinstall').read_text()
+assert source.count('@REKEY_CORE_LABEL@') == 1
+Path(sys.argv[2]).write_text(source.replace('@REKEY_CORE_LABEL@', sys.argv[1] + '.core'))
+PYTHON
 chmod 755 "$stage/scripts/preinstall"
 cat > "$stage/scripts/postinstall" <<'SCRIPT'
 #!/bin/sh

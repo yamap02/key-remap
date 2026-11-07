@@ -8,7 +8,9 @@ set -eu
     echo 'ReKey: cannot inspect the system launchd domain' >&2
     exit 1
 }
-for service in jp.example.rekey.core jp.example.rekey.vhid; do
+# The build replaces the first label with the validated product ID. Keep
+# development-era labels so an initial pkg upgrade stops the older Core.
+for service in @REKEY_CORE_LABEL@ jp.example.rekey.core jp.example.rekey.vhid; do
     if /bin/launchctl print "system/$service" >/dev/null 2>&1; then
         /bin/launchctl bootout "system/$service" || {
             echo "ReKey: failed to stop $service" >&2

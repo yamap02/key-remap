@@ -42,7 +42,7 @@ struct TraceEvent: Decodable, Identifiable, Sendable {
     private(set) var viewerSession: UInt64 = 0
     private var viewerSuspended = false
     private let serviceName: String
-    init(serviceName: String = "jp.example.rekey.core") { self.serviceName = serviceName }
+    init(serviceName: String? = nil) { self.serviceName = serviceName ?? ReKeyServiceIdentity.coreName() }
     private var connection: NSXPCConnection?
     private var statusInFlight = false
     private var eventsInFlight = false

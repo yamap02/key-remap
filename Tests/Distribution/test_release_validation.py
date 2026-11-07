@@ -89,7 +89,7 @@ class ReleaseValidation(unittest.TestCase):
                                   cwd=ROOT, env=values, capture_output=True).returncode
         self.assertEqual(check(env), 0)
         for changes in ({'REKEY_TEAM_ID': ''}, {'REKEY_SIGNING_IDENTITY': '-'},
-                        {'REKEY_PRODUCT_ID': 'jp.example.rekey'}, {'REKEY_VERSION': 'invalid'}, {'REKEY_BUILD_NUMBER': '01'},
+                        {'REKEY_PRODUCT_ID': 'jp.example.rekey'}, {'REKEY_PRODUCT_ID': 'org.' + 'a' * 118}, {'REKEY_VERSION': 'invalid'}, {'REKEY_BUILD_NUMBER': '01'},
                         {'REKEY_FEED_URL': 'http://example.com/feed.xml'},
                         {'REKEY_FEED_URL': 'https://example.invalid/feed.xml'},
                         {'REKEY_FEED_URL': 'https://example.com/feed.xml'},

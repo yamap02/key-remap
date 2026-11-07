@@ -68,7 +68,7 @@ import ReKeyModel
     }
     func proxy() -> ReKeyControl? {
         if connection == nil {
-            let c = NSXPCConnection(machServiceName: "jp.example.rekey.core", options: .privileged)
+            let c = NSXPCConnection(machServiceName: ReKeyServiceIdentity.coreName(), options: .privileged)
             c.remoteObjectInterface = NSXPCInterface(with: ReKeyControl.self)
             c.invalidationHandler = { @Sendable [weak self] in Task { @MainActor in self?.connection = nil; self?.busy = false; self?.viewerLease.update(requested: false); self?.viewerRequestInFlight = false } }
             c.interruptionHandler = { @Sendable [weak self] in Task { @MainActor in self?.busy = false; self?.viewerLease.update(requested: false); self?.viewerRequestInFlight = false } }
@@ -188,7 +188,7 @@ let app = NSApplication.shared
 app.setActivationPolicy(.prohibited)
 let agent = Agent()
 agent.installShortcuts()
-let permissionObserver = DistributedNotificationCenter.default().addObserver(forName: NSNotification.Name("jp.example.rekey.agent.request-permissions"), object: nil, queue: .main) { _ in Task { @MainActor in agent.requestPermissions() } }
+let permissionObserver = DistributedNotificationCenter.default().addObserver(forName: NSNotification.Name(ReKeyServiceIdentity.permissionNotification()), object: nil, queue: .main) { _ in Task { @MainActor in agent.requestPermissions() } }
 if CommandLine.arguments.contains("--request-permissions") { agent.requestPermissions() }
 let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in Task { @MainActor in agent.tick() } }
 app.run()
