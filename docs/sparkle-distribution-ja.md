@@ -18,7 +18,7 @@
 
 ## 出荷前に必要なもの
 
-1. 配布者の Apple Developer Program、実際の Team ID と一意な製品 bundle ID、Developer ID Application 証明書、pkg が必要なら Developer ID Installer 証明書を用意する。現在 `jp.example.rekey` と Agent、サービス名などがコードに固定されており変更・移行設計が必要。Team ID や製品 ID が設定可能になったとはまだ言えない。
+1. 配布者の Apple Developer Program、実際の Team ID と一意な製品 bundle ID、Developer ID Application 証明書、pkg が必要なら Developer ID Installer 証明書を用意する。`REKEY_PRODUCT_ID` は app、Agent、Core の XPC 判定、pkg ID に反映される。`REKEY_TEAM_ID` を指定すると ad-hoc 署名を拒否し、App・Agent・Core の署名 Team ID を照合する。未指定時は開発用 `jp.example.rekey` と ad-hoc 署名を使う。launchd / Mach service 名には開発用の `jp.example.rekey` が残り、製品 ID 変更時の既存登録・TCC 承認の移行と同時インストールは未検証。実在の証明書を使った照合も未検証。
 2. `xcrun notarytool store-credentials` 等で公証資格情報をキーチェーンに保管し、パスワード、API 秘密鍵、署名鍵をリポジトリ、コマンド履歴、CI ログへ書かない。専用の Sparkle EdDSA 鍵を `generate_keys --account <組織専用名>` でキーチェーンに生成し、公開鍵のみビルド設定に渡す。秘密鍵は管理された安全な場所にバックアップし、紛失・ローテーション方針を決める。
 3. GitHub の公開リポジトリと Releases を決め、HTTPS の安定した feed URL と、各バージョンに固定された HTTPS 更新ファイル URL を設計する。`latest/download` を feed に使う場合は Release 公開時の切替・キャッシュと、過去アイテムが元のバージョンの asset を指すことを検証する。認証が必要な private Release の URL を公開 feed とみなさない。
 4. 実際の識別子・署名で App、Agent、Core と Sparkle の各ヘルパーを Developer ID 署名し、Apple に公証・staple する。`codesign`、`spctl`、`stapler` と配布アーカイブ展開後の署名を確認する。公開前の署名・公証自動化と本番向け失敗時停止処理は未実装。

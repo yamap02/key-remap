@@ -1,4 +1,7 @@
 #import "Control.h"
+#ifndef REKEY_PRODUCT_ID
+#define REKEY_PRODUCT_ID "jp.example.rekey"
+#endif
 #import <Carbon/Carbon.h>
 #import <Security/Security.h>
 #import <SystemConfiguration/SystemConfiguration.h>
@@ -226,7 +229,8 @@ int main(int argc,const char* argv[]){
         NSString* contents=[[[exe stringByDeletingLastPathComponent] stringByDeletingLastPathComponent] stringByDeletingLastPathComponent];
         NSMutableArray<NSString*>* requirements=[NSMutableArray array];
         NSArray<NSString*>* paths=@[[contents stringByAppendingPathComponent:@"MacOS/ReKey"],[contents stringByAppendingPathComponent:@"Library/LoginItems/ReKeyAgent.app/Contents/MacOS/ReKeyAgent"]];
-        NSArray<NSString*>* identifiers=@[@"jp.example.rekey",@"jp.example.rekey.agent"];
+        NSString* productID=@REKEY_PRODUCT_ID;
+        NSArray<NSString*>* identifiers=@[productID,[productID stringByAppendingString:@".agent"]];
         for(NSUInteger i=0;i<paths.count;++i){
             NSString* path=paths[i];struct stat st{};SecStaticCodeRef code=nullptr;SecRequirementRef req=nullptr;CFStringRef requirement=nullptr;
             bool trusted=true;NSString* parent=[path stringByDeletingLastPathComponent];
