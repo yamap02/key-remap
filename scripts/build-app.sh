@@ -47,7 +47,12 @@ framework_source="$PWD/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/maco
 mkdir -p "$app/Contents/Frameworks"
 ditto "$framework_source" "$app/Contents/Frameworks/Sparkle.framework"
 framework="$app/Contents/Frameworks/Sparkle.framework/Versions/B"
-sign_args=(--force --sign "${REKEY_SIGNING_IDENTITY:--}" --options runtime)
+signing_identity="${REKEY_SIGNING_IDENTITY:--}"
+sign_args=(--force --sign "$signing_identity")
+# Hardened Runtime enforces library validation: separate ad-hoc signed code
+# has no Team ID and cannot load the Sparkle framework. Distribution builds
+# always use Developer ID, Hardened Runtime and a secure timestamp.
+if [[ "$signing_identity" != '-' ]]; then sign_args+=(--options runtime); fi
 if [[ "$REKEY_RELEASE" == 1 ]]; then sign_args+=(--timestamp); fi
 codesign "${sign_args[@]}" "$framework/XPCServices/Installer.xpc"
 codesign "${sign_args[@]}" --preserve-metadata=entitlements "$framework/XPCServices/Downloader.xpc"

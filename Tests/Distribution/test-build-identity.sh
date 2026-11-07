@@ -21,4 +21,7 @@ done
 cmp .build/checkouts/Sparkle/LICENSE "$app/Contents/Resources/Licenses/Sparkle.txt"
 cmp Vendor/VirtualHID/LICENSE.md "$app/Contents/Resources/Licenses/Karabiner-DriverKit-VirtualHIDDevice.txt"
 codesign --verify --deep --strict "$app"
+if codesign -dv --verbose=4 "$app" 2>&1 | rg -q '^CodeDirectory .*flags=.*\(.*runtime'; then
+  echo 'Ad-hoc development app must not enable Hardened Runtime library validation' >&2; exit 1
+fi
 print 'PASS build identity, version, signing and invalid inputs'
