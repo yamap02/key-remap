@@ -8,7 +8,9 @@ fi
 if [[ "$REKEY_RELEASE" == 1 ]]; then
   # Package exactly the app that was signed, notarized and stapled for the
   # update archive; rebuilding here would silently create a different app.
+  [[ -n "${REKEY_UPDATE_ARCHIVE:-}" ]] || { echo 'REKEY_UPDATE_ARCHIVE is required for a release package' >&2; exit 64; }
   /usr/bin/python3 scripts/verify-package-app.py build/ReKey.app
+  /usr/bin/python3 scripts/verify-update-archive.py build/ReKey.app "$REKEY_UPDATE_ARCHIVE"
   /usr/bin/python3 scripts/verify-release-signatures.py build/ReKey.app "$REKEY_TEAM_ID"
   xcrun stapler validate build/ReKey.app
   spctl --assess --type execute --verbose=2 build/ReKey.app
