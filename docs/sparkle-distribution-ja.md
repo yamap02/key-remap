@@ -6,7 +6,7 @@
 
 通常の app 更新を優先して検証する。現在の pkg は `/Applications/ReKey.app` を root:wheel、他ユーザーから書き込み不可にし、Core はその app と Agent の指定要件を XPC に適用する。Sparkle 2.9.6 の通常インストーラは旧 app の所有者・グループを新 app に合わせようとするが、失敗を致命的エラーにしない。したがってコードの存在だけでは root 所有が維持される保証にならない。更新後に全階層の所有権とモード、Core の新しい署名要件および接続、Agent・Core の旧プロセス停止を確認する必要がある。
 
-成立しない場合のみ flat pkg を検討する。pkg 更新には管理者認証が毎回必要で、サイレントインストール、差分更新、通常の `generate_appcast` の利用に制限がある。現行 pkg の preinstall は Core の bootout の失敗を無視し、postinstall は権限を設定するだけなので、安全な停止・失敗時の復旧や再登録は未保証。現状の pkg を Sparkle 更新として配布しない。[Sparkle package updates](https://sparkle-project.org/documentation/package-updates/) / [publishing](https://sparkle-project.org/documentation/publishing/)
+成立しない場合のみ flat pkg を検討する。pkg 更新には管理者認証が毎回必要で、サイレントインストール、差分更新、通常の `generate_appcast` の利用に制限がある。pkg の preinstall は launchd の停止失敗、Core/VHID の残存やプロセス検査失敗を検出するとインストールを中止する。停止後にインストールが中断すると自動再登録は未対応で、postinstall は権限を設定するだけ。実機の停止・失敗時の復旧や Agent の再登録は未検証。現状の pkg を Sparkle 更新として配布しない。[Sparkle package updates](https://sparkle-project.org/documentation/package-updates/) / [publishing](https://sparkle-project.org/documentation/publishing/)
 
 ## 現在の実装と検証
 
@@ -59,4 +59,4 @@
 4. 空の作業ディレクトリを用意し、直前に検証した旧 feed を `appcast.xml` としてコピーする。そこへ `ditto -c -k --sequesterRsrc --keepParent build/ReKey.app <作業ディレクトリ>/ReKey-<表示版>.zip` で新しい zip を置く。初回は旧 feed を置かない。`generate_appcast --account "$SPARKLE_ACCOUNT" --maximum-versions 0 --maximum-deltas 0 --download-url-prefix "https://github.com/<owner>/<repo>/releases/download/<tag>/" <作業ディレクトリ>` で作成する。owner・repo・tag は実際の GitHub Releases の値に置き換え、過去 item の URL が各旧 release を指したままか確認する。生成後 `sign_update --account "$SPARKLE_ACCOUNT" --verify <作業ディレクトリ>/appcast.xml` で署名を検証し、新旧各項目の build 番号、HTTPS URL、公開鍵、enclosure 署名を点検する。公開鍵と秘密鍵が対応することも署名検証および旧版による実機更新で確認する。
 5. `gh release create <tag> --draft --verify-tag` で下書きを作り、署名・公証済み初回導入 pkg、更新 zip、署名済み appcast をアップロードする。下書きと試験環境で asset、内容と順序を確認してから公開する。安定 feed を GitHub の `releases/latest/download/appcast.xml` に置く場合、各正式 release にその名前の feed を含めて `gh release edit <tag> --draft=false --latest` で切り替える。公開後は feed と新旧 asset を HTTPS で実際に取得し、署名と内容を再検証する。初回導入 pkg は `REKEY_INSTALLER_IDENTITY` と `REKEY_NOTARY_PROFILE` を設定した `scripts/build-pkg.sh` で生成し、Installer 署名・公証を別途確認する。
 
-この手順自体も実在する署名・公証・配信先での通し検証は未実施。現在の pkg 停止処理と Sparkle 更新時の入力解放が未検証のため、手順があることを公開承認とみなさない。
+この手順自体も実在する署名・公証・配信先での通し検証は未実施。現在の pkg 停止処理の実機挙動と Sparkle 更新時の入力解放が未検証のため、手順があることを公開承認とみなさない。
