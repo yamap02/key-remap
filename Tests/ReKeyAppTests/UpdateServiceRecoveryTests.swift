@@ -180,3 +180,23 @@ import ReKeyModel
     } catch {}
     #expect(fixture.actions.isEmpty)
 }
+
+@Test @MainActor func missingOriginOrDuplicateServicesNeverResumeInput() async throws {
+    for (origin, services) in [(nil, ["core"]), ("", ["core"]), ("10", ["core", "core"])] as [(String?, [String])] {
+        let fixture = RecoveryFixture(); defer { fixture.clean() }
+        fixture.status["core"] = .notRegistered
+        fixture.defaults.set(services, forKey: "updateRecovery.pendingServices")
+        if let origin { fixture.defaults.set(origin, forKey: "updateRecovery.pendingOriginBuild") }
+        let recovery = UpdateServiceRecovery(defaults: fixture.defaults)
+        do {
+            try await recovery.recover(build: "10", operations: fixture.operations(), allowSameBuild: true)
+            Issue.record("An incomplete recovery record must not restart input")
+        } catch {}
+        do {
+            try await recovery.ensureStopped(operations: fixture.operations())
+            Issue.record("An incomplete recovery record must not allow an update")
+        } catch {}
+        #expect(fixture.actions.isEmpty)
+        #expect(recovery.hasPendingRecovery)
+    }
+}

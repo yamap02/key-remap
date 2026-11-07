@@ -29,6 +29,16 @@ import Foundation
 
     var hasPendingRecovery: Bool { defaults.object(forKey: pendingKey) != nil }
 
+    private func pendingRecord() throws -> (services: [String], origin: String) {
+        guard let pending = defaults.stringArray(forKey: pendingKey),
+              let origin = defaults.string(forKey: originKey), !origin.isEmpty,
+              Set(pending).count == pending.count,
+              pending.allSatisfy({ serviceNames.contains($0) }) else {
+            throw RecoveryError.unavailable("invalid recovery record")
+        }
+        return (pending, origin)
+    }
+
     // Persist the exact enabled set before stopping anything. The next app can
     // restore it after an update, a failed stop, or an interrupted process.
     func prepare(build: String, operations: Operations) async throws {
@@ -52,10 +62,7 @@ import Foundation
     // or a service may have been re-enabled externally. Check again before
     // allowing Sparkle to continue, including services originally disabled.
     func ensureStopped(operations: Operations) async throws {
-        guard let pending = defaults.stringArray(forKey: pendingKey),
-              pending.allSatisfy({ serviceNames.contains($0) }) else {
-            throw RecoveryError.unavailable("invalid recovery record")
-        }
+        let pending = try pendingRecord().services
         for name in serviceNames {
             let status = operations.status(name)
             if pending.contains(name) {
@@ -77,10 +84,11 @@ import Foundation
     func recover(build: String, operations: Operations, allowSameBuild: Bool = false) async throws {
         guard !build.isEmpty else { return }
         let previous = defaults.string(forKey: buildKey)
-        var pending = defaults.stringArray(forKey: pendingKey)
-        if hasPendingRecovery && pending == nil { throw RecoveryError.unavailable("invalid recovery record") }
-        if pending != nil, let origin = defaults.string(forKey: originKey), origin == build, !allowSameBuild {
-            throw RecoveryError.pendingUpdate
+        var pending: [String]?
+        if hasPendingRecovery {
+            let record = try pendingRecord()
+            if record.origin == build && !allowSameBuild { throw RecoveryError.pendingUpdate }
+            pending = record.services
         }
         if pending == nil {
             guard let previous else { defaults.set(build, forKey: buildKey); return }
@@ -96,12 +104,11 @@ import Foundation
             pending = enabled
             // Commit even an empty list before proceeding: only previously
             // enabled services may be re-enabled after a crash.
+            defaults.set(previous, forKey: originKey)
             defaults.set(pending, forKey: pendingKey)
             guard defaults.synchronize() else { throw RecoveryError.unavailable("recovery record") }
         }
-        guard let pending, pending.allSatisfy({ serviceNames.contains($0) }) else {
-            throw RecoveryError.unavailable("invalid recovery record")
-        }
+        guard let pending else { throw RecoveryError.unavailable("invalid recovery record") }
         for name in pending {
             switch operations.status(name) {
             case .enabled: try await operations.stop(name)
