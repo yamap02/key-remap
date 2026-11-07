@@ -27,3 +27,6 @@ All 912 files in its nested `vendor/vendor/include` directory were tracked.
 That establishes the upstream snapshot, not the original revision of each
 third-party component or the completeness of its notices. Repeat the
 dependency and license audit when dependencies or build flags change.
+`scripts/check-vendored-notices.py` inventories compiled vendored header
+families and checks for corresponding notice files during app builds. It does
+not establish license completeness or inspect third-party binary dependencies.

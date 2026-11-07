@@ -2,6 +2,7 @@
 set -euo pipefail
 cd "${0:A:h:h}"
 source scripts/build-config.sh
+/usr/bin/python3 scripts/check-vendored-notices.py
 scripts/build-core.sh
 scripts/build-icons.sh
 swift build -c release
