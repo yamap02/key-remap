@@ -126,14 +126,19 @@ enum SettingsPage: String, CaseIterable, Identifiable {
             self.saving = nil
         }
     }
-    func flush() {
+    @discardableResult func flush() -> Bool {
         do {
             let saved = try store.save(config, basedOn: lastData)
             if resumeAfterSave && saved.data == lastData && !saved.configuration.global.paused { runtime.reloadConfiguration() }
             config = saved.configuration; lastData = saved.data; dirty = false; resumeAfterSave = false; saveStatus = "保存済み"
             if !saved.warnings.isEmpty { self.error = saved.warnings.joined(separator: "\n") }
+            return true
         }
-        catch { self.error = error.localizedDescription; saveStatus = "保存エラー" }
+        catch { self.error = error.localizedDescription; saveStatus = "保存エラー"; return false }
+    }
+    func saveBeforeUpdate() throws {
+        saving?.cancel(); saving = nil
+        guard flush() else { throw NSError(domain: "ReKey.Update", code: 3, userInfo: [NSLocalizedDescriptionKey: "設定を保存できませんでした。"] ) }
     }
     func selectProfile(_ id: String) { config.select(id); changed() }
     func togglePause() { resumeAfterSave = isPaused && !config.global.paused; config.global.paused = !isPaused; changed() }
@@ -245,9 +250,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         }
         recoveringServices = true
         defer { recoveringServices = false; refreshSystem() }
-        saving?.cancel(); saving = nil
-        flush()
-        guard !dirty else { throw NSError(domain: "ReKey.Update", code: 3, userInfo: [NSLocalizedDescriptionKey: "設定を保存できませんでした。"] ) }
+        try saveBeforeUpdate()
         if updatePrepared { try await updateRecovery.ensureStopped(operations: updateServiceOperations()) }
         else { try await updateRecovery.prepare(build: build, operations: updateServiceOperations()) }
         updatePrepared = true

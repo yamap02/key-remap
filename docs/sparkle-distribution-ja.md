@@ -2,6 +2,8 @@
 
 **一般公開不可。** Sparkle の組込みは開発段階であり、製品 ID、実証明書、公証、更新の実機安全性、ドライバの出荷要件は未完了。この文書は未確認のコマンドを完成済みのリリース手順として扱わない。
 
+2026-11-07 時点で、既存の GitHub リポジトリ `yamap02/key-remap` は private。この Mac の有効なコード署名 identity は 0 件。公開先、Apple Developer Team ID、製品 bundle ID は未決定であり、仮の値を配布設定としない。
+
 ## 更新方式の判断
 
 通常の app 更新を優先して検証する。現在の pkg は `/Applications/ReKey.app` を root:wheel、他ユーザーから書き込み不可にし、Core はその app と Agent の指定要件を XPC に適用する。2026-11-07、権限を変更せず Sparkle 2.9.6 の権限判定を呼び、現在の root 所有 `/Applications/ReKey.app` は管理者認証が必要、ユーザー所有の一時 app は不要と判定された（`python3 Tests/Distribution/test-sparkle-authorization.py --root-bundle /Applications/ReKey.app`）。この試験は固定版の非公開 API を診断にだけ使用し、更新の実行やアプリの変更はしない。ソース上も認証が必要なら system domain を使う。Sparkle 2.9.6 の通常インストーラは旧 app の所有者・グループを新 app に合わせようとするが、失敗を致命的エラーにしない。したがってコードの存在だけでは root 所有が維持される保証にならない。認証が必要との判定は、認証成功後に所有権が正しく維持される証明にはならない。更新後に全階層の所有権とモード、Core の新しい署名要件および接続、Agent・Core の旧プロセス停止を確認する必要がある。この環境ではパスワードなしの管理者操作は利用できず、署名済み製品版の置換試験は未実施。
@@ -10,7 +12,7 @@
 
 ## 現在の実装と検証
 
-- `check_for_updates` は設定 JSON の自動確認設定として使う。設定画面から手動確認できる。自動ダウンロード・自動インストールは無効。feed URL または EdDSA 公開鍵のない開発ビルドでは更新を開始しない。
+- `check_for_updates` は設定 JSON の自動確認設定として使う。設定画面から手動確認できる。自動ダウンロード・自動インストールは無効。feed URL または EdDSA 公開鍵のない開発ビルドでは更新を開始しない。更新前の設定保存が失敗した場合は、未保存の編集がない場合も更新準備を中止する。テストでは設定の保存と I/O エラー時の中止を確認した。
 - Sparkle 2.9.6 を固定。`REKEY_FEED_URL` と `REKEY_ED_PUBLIC_KEY` を両方指定して HTTPS feed と公開鍵を埋め込む。feed 署名と更新の展開前検証を必須とする。公開鍵は秘密鍵ではない。
 - `REKEY_VERSION` は app と Agent の表示版、`REKEY_BUILD_NUMBER` は app と Agent の build 番号および pkg receipt の版。明示しない開発ビルドではそれぞれ `0.1.0` と Git コミット数を使用。公開時には両方を明示し、build 番号はリリースごとに単調増加させる。`scripts/check-appcast-version.py` は署名検証済み feed の全履歴より新しい整数 build を要求する。試験 pkg の展開結果では ID と build 2001 が app と一致した。
 - `swift test`、`scripts/test-core.sh`、開発用 app のビルドと `codesign --verify --deep --strict` が通過。使い捨ての試験鍵で通常 app の zip と署名済み appcast を生成し、署名検証と feed・zip 改ざんの拒否を確認した。試験鍵は一時ディレクトリに作り実行後に削除した。旧 feed だけを次の作業ディレクトリへ引き継ぐ連続2リリースの試験で、両アーカイブの署名、旧 URL と署名の保持、build の新旧順、重複 build の拒否も確認した。実際の配布鍵による検証ではない。

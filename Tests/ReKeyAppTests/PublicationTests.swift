@@ -34,6 +34,26 @@ private func event(_ index: Int) -> TraceEvent {
     withExtendedLifetime(subscription) {}
 }
 
+@Test @MainActor func updatePreparationRequiresSuccessfulSettingsSave() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let store = ConfigurationStore(url: directory.appendingPathComponent("rekey.json"))
+    let state = AppState(store: store, startMonitoring: false)
+    state.config.profiles[0].name = "Update preserves this"
+    state.changed()
+    try state.saveBeforeUpdate()
+    #expect(try store.load().profiles[0].name == "Update preserves this")
+
+    // A clean editor must still reject an I/O failure: dirty == false does
+    // not prove the attempted save succeeded.
+    let blocked = directory.appendingPathComponent("not-a-directory")
+    try Data("file".utf8).write(to: blocked)
+    let broken = AppState(store: ConfigurationStore(url: blocked.appendingPathComponent("rekey.json")), startMonitoring: false)
+    #expect(throws: (any Error).self) { try broken.saveBeforeUpdate() }
+    #expect(broken.saveStatus == "保存エラー")
+}
+
 @Test @MainActor func unchangedHeartbeatsDoNotInvalidateSettings() throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("rekey.json")
     let runtime = RuntimeClient()
