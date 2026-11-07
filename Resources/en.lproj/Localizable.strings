@@ -206,3 +206,9 @@
 "rekey-core が入力の取得・変換・仮想 HID 出力を行います。root サービスは1つです。ReKeyAgent はユーザー権限で動作します。" = "rekey-core captures, remaps and outputs virtual HID events in one root service. ReKeyAgent runs as the logged-in user.";
 "通常のリマップにはアクセシビリティは不要です。EventViewer では ReKeyAgent による入力欄の安全確認が必要です。" = "Normal remapping does not require Accessibility. EventViewer requires ReKeyAgent to check that the focused input field is safe.";
 "EventViewer のアクセスを許可" = "Allow EventViewer Access";
+"アップデート" = "Updates";
+"更新を自動的に確認" = "Automatically check for updates";
+"今すぐ更新を確認" = "Check for Updates Now";
+"更新の確認時に配信サーバーへ接続します。インストールには管理者認証が必要です。" = "Checking for updates connects to the distribution server. Installation requires administrator authorization.";
+"このビルドには更新配信先と公開鍵が設定されていません。" = "This build does not have an update feed and public key configured.";
+"ReKey について" = "About ReKey";

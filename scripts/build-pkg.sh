@@ -2,7 +2,8 @@
 set -euo pipefail
 cd "${0:A:h:h}"
 scripts/build-app.sh
-package_filename="${1:-ReKey-0.1.0.pkg}"
+version="${REKEY_VERSION:-0.1.0}"
+package_filename="${1:-ReKey-${version}.pkg}"
 if [[ "$package_filename" == */* || "$package_filename" != *.pkg ]]; then echo "Pass a .pkg filename without directories" >&2; exit 64; fi
 package_output="build/$package_filename"
 stage=$(mktemp -d "${TMPDIR:-/tmp}/rekey-package.XXXXXX")
@@ -39,7 +40,7 @@ for component in components:
 with open(path, 'wb') as stream:
     plistlib.dump(components, stream)
 PYTHON
-args=(--component-plist "$stage/components.plist" --root "$stage/root" --scripts "$stage/scripts" --identifier jp.example.rekey.pkg --version 0.1.0 --install-location / --ownership recommended)
+args=(--component-plist "$stage/components.plist" --root "$stage/root" --scripts "$stage/scripts" --identifier jp.example.rekey.pkg --version "$version" --install-location / --ownership recommended)
 if [[ -n "${REKEY_INSTALLER_IDENTITY:-}" ]]; then args+=(--sign "$REKEY_INSTALLER_IDENTITY"); fi
 pkgbuild "${args[@]}" "$package_output"
 if [[ -n "${REKEY_NOTARY_PROFILE:-}" ]]; then

@@ -43,6 +43,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     var eventViewerReady: Bool { runtime.eventViewerReady }
     var driverActive: Bool { runtime.status?.driver_ready == true }
     let runtime: RuntimeClient
+    private(set) var updates: UpdateController!
     private var runtimeChanges: AnyCancellable?
     var daemonStatus: String { runtime.status.map { $0.seized_devices > 0 && !$0.paused && !$0.conflict ? "稼働中" : $0.paused ? "一時停止中" : $0.conflict ? "Karabiner と競合" : "接続済み・入力待ち" } ?? "未接続" }
     @Published var importResult: ImportResult?
@@ -72,6 +73,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         runtimeChanges = runtime.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         showWelcome = !FileManager.default.fileExists(atPath: store.url.path)
         reload()
+        updates = UpdateController(automaticChecks: config.global.check_for_updates)
         guard startMonitoring else { return }
         refreshSystem()
         Task {
@@ -91,7 +93,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
     func reload(reloadEngine: Bool = false) {
         saving?.cancel(); saving = nil; resumeAfterSave = false
-        do { let snapshot = try store.snapshot(); config = snapshot.configuration; lastData = snapshot.data; dirty = false; saveStatus = "設定を読み込みました"; if reloadEngine { runtime.reloadConfiguration() } }
+        do { let snapshot = try store.snapshot(); config = snapshot.configuration; updates?.setAutomaticChecks(config.global.check_for_updates); lastData = snapshot.data; dirty = false; saveStatus = "設定を読み込みました"; if reloadEngine { runtime.reloadConfiguration() } }
         catch { self.error = error.localizedDescription; saveStatus = "読み込みエラー" }
     }
     func reloadIfChanged() {

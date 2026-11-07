@@ -136,9 +136,16 @@ struct GeneralView: View {
                 Text("変更は 300 ms 後に自動保存。直近 20 世代のバックアップを保持します。").font(.caption).foregroundStyle(.secondary)
                 HStack { Button("Finder で表示") { state.revealConfig() }; Button("再読込") { state.reload(reloadEngine: true) }; Button("すべて書き出す…") { state.exportFile() } }
             }
-            Section("この開発版について") {
-                Text("ReKey 0.1.0 · macOS 27 / Apple Silicon").font(.callout)
-                Text("自動更新・署名済みインストーラは未提供です。更新のための通信やテレメトリは行いません。").font(.caption).foregroundStyle(.secondary)
+            Section("アップデート") {
+                Toggle("更新を自動的に確認", isOn: $state.config.global.check_for_updates)
+                    .onChange(of: state.config.global.check_for_updates) { state.updates.setAutomaticChecks(state.config.global.check_for_updates); state.changed() }
+                    .disabled(!state.updates.available)
+                Button("今すぐ更新を確認") { state.updates.checkNow() }.disabled(!state.updates.available)
+                Text(L(state.updates.available ? "更新の確認時に配信サーバーへ接続します。インストールには管理者認証が必要です。" : "このビルドには更新配信先と公開鍵が設定されていません。"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("ReKey について") {
+                Text("ReKey \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—") · macOS 27 / Apple Silicon").font(.callout)
             }
         }.formStyle(.grouped)
     }
