@@ -50,6 +50,8 @@ scripts/build-app.sh > "$work/build-next.log" 2>&1
 ditto -c -k --sequesterRsrc --keepParent build/ReKey.app "$work/next/ReKey-0.1.2.zip"
 build/sparkle-tools/bin/generate_appcast --ed-key-file "$work/key" --maximum-versions 0 --maximum-deltas 0 --download-url-prefix 'https://github.com/example/repo/releases/download/v0.1.2/' "$work/next" > "$work/appcast-next.log" 2>&1
 build/sparkle-tools/bin/sign_update --ed-key-file "$work/key" --verify "$work/next/appcast.xml"
+checked_sig=$(python3 scripts/check-appcast-assets.py "$work/next/appcast.xml" "$work/next/ReKey-0.1.2.zip" 1002 'https://github.com/example/repo/releases/download/v0.1.2/ReKey-0.1.2.zip' --previous "$work/updates/appcast.xml")
+build/sparkle-tools/bin/sign_update --ed-key-file "$work/key" --verify "$work/next/ReKey-0.1.2.zip" "$checked_sig" > /dev/null
 python3 - "$work/next/appcast.xml" "$work/updates/appcast.xml" <<'PYTHON'
 import sys, xml.etree.ElementTree as ET
 ns = '{http://www.andymatuschak.org/xml-namespaces/sparkle}'
