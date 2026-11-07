@@ -23,6 +23,12 @@ SIGN_UPDATE = ROOT / 'build/sparkle-tools/bin/sign_update'
 
 
 class QuietHandler(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/update.zip' and getattr(self.server, 'fail_download', False):
+            self.send_error(404)
+            return
+        super().do_GET()
+
     def log_message(self, *_):
         pass
 
@@ -58,7 +64,7 @@ def main():
         thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
         process = None
         try:
-            for name, version in [('cancel', '100'), ('invalid', '100'), ('old', '100'), ('new', '101')]:
+            for name, version in [('cancel', '100'), ('invalid', '100'), ('network', '100'), ('old', '100'), ('new', '101')]:
                 app = root / name / 'Fixture.app'
                 contents = app / 'Contents'
                 (contents / 'MacOS').mkdir(parents=True); (contents / 'Frameworks').mkdir()
@@ -66,7 +72,7 @@ def main():
                 framework = contents / 'Frameworks/Sparkle.framework'
                 command('ditto', str(FRAMEWORK), str(framework))
                 command('install_name_tool', '-add_rpath', '@executable_path/../Frameworks', str(contents / 'MacOS/Fixture'))
-                fixture_id = bundle_id + '.' + name if name in ('cancel', 'invalid') else bundle_id
+                fixture_id = bundle_id + '.' + name if name in ('cancel', 'invalid', 'network') else bundle_id
                 info = dict(CFBundleExecutable='Fixture', CFBundleIdentifier=fixture_id, CFBundleName='Fixture',
                             CFBundlePackageType='APPL', CFBundleVersion=version,
                             CFBundleShortVersionString='1.0' if version == '100' else '1.1', LSUIElement=True,
@@ -112,6 +118,19 @@ def main():
                 raise AssertionError(f'Invalid signature recovery failed: {invalid.stderr[-3000:]}')
             print('PASS invalid update signature restored simulated service and preserved app and settings')
             (state / 'actions').unlink()
+            server.fail_download = True
+            network = subprocess.run([str(root / 'network/Fixture.app/Contents/MacOS/Fixture')],
+                                     capture_output=True, text=True, timeout=30)
+            server.fail_download = False
+            if (network.returncode != 0 or not (state / 'network-recovered').exists() or
+                (state / 'service-core').read_text() != 'enabled' or
+                (state / 'service-agent').read_text() != 'notRegistered' or
+                (state / 'actions').read_text().splitlines() != ['stop-core', 'start-core'] or
+                config.read_text() != 'personal-setting' or
+                plistlib.loads((root / 'network/Fixture.app/Contents/Info.plist').read_bytes())['CFBundleVersion'] != '100'):
+                raise AssertionError(f'Download failure recovery failed: {network.stderr[-3000:]}')
+            print('PASS HTTP download failure restored simulated service and preserved app and settings')
+            (state / 'actions').unlink()
             with (root / 'stderr').open('w+') as stderr:
                 process = subprocess.Popen([str(root / 'old/Fixture.app/Contents/MacOS/Fixture')],
                                            stdout=subprocess.DEVNULL, stderr=stderr)
@@ -148,9 +167,13 @@ def main():
             invalid_cache = Path.home() / 'Library/Caches' / (bundle_id + '.invalid')
             if invalid_cache.exists():
                 shutil.rmtree(invalid_cache)
+            network_cache = Path.home() / 'Library/Caches' / (bundle_id + '.network')
+            if network_cache.exists():
+                shutil.rmtree(network_cache)
             command(str(helper), str(state), bundle_id, 'cleanup')
             command(str(helper), str(state), bundle_id + '.cancel', 'cleanup')
             command(str(helper), str(state), bundle_id + '.invalid', 'cleanup')
+            command(str(helper), str(state), bundle_id + '.network', 'cleanup')
 
 
 if __name__ == '__main__':

@@ -3,6 +3,7 @@
 static NSString *base(void) { return [NSBundle.mainBundle objectForInfoDictionaryKey:@"FixtureState"]; }
 static BOOL cancelMode(void) { return [[NSBundle.mainBundle objectForInfoDictionaryKey:@"FixtureMode"] isEqualToString:@"cancel"]; }
 static BOOL invalidMode(void) { return [[NSBundle.mainBundle objectForInfoDictionaryKey:@"FixtureMode"] isEqualToString:@"invalid"]; }
+static BOOL networkMode(void) { return [[NSBundle.mainBundle objectForInfoDictionaryKey:@"FixtureMode"] isEqualToString:@"network"]; }
 static void writeMarker(NSString *filename, NSString *value) { [value writeToFile:[base() stringByAppendingPathComponent:filename] atomically:YES encoding:NSUTF8StringEncoding error:NULL]; }
 static BOOL recover(NSString *action) {
     NSTask *task = [NSTask new];
@@ -23,11 +24,12 @@ static BOOL recover(NSString *action) {
 - (void)showUpdateReleaseNotesFailedToDownloadWithError:(NSError *)e {}
 - (void)showUpdateNotFoundWithError:(NSError *)e acknowledgement:(void (^)(void))a { writeMarker(@"error",e.description); exit(92); }
 - (void)showUpdaterError:(NSError *)e acknowledgement:(void (^)(void))a {
-    if (!invalidMode()) { writeMarker(@"error",e.description); exit(93); }
+    if (!invalidMode() && !networkMode()) { writeMarker(@"error",e.description); exit(93); }
     BOOL rejected = NO;
     NSError *current = e;
     for (int depth = 0; current != nil && depth < 8; ++depth, current = current.userInfo[NSUnderlyingErrorKey]) {
-        if ([current.domain isEqualToString:SUSparkleErrorDomain] && current.code == SUValidationError && [current.localizedDescription containsString:@"EdDSA signature does not match"]) { rejected = YES; break; }
+        if (invalidMode() && [current.domain isEqualToString:SUSparkleErrorDomain] && current.code == SUValidationError && [current.localizedDescription containsString:@"EdDSA signature does not match"]) { rejected = YES; break; }
+        if (networkMode() && [current.domain isEqualToString:SUSparkleErrorDomain] && current.code == SUDownloadError) { rejected = YES; break; }
     }
     if (!rejected) { writeMarker(@"error", e.description); exit(93); }
     a();
@@ -50,9 +52,9 @@ static BOOL recover(NSString *action) {
 - (void)userDidCancelDownload:(SPUUpdater *)updater { self.cancelled = YES; }
 - (void)updater:(SPUUpdater *)updater didAbortWithError:(NSError *)error { self.aborted = YES; }
 - (void)updater:(SPUUpdater *)updater didFinishUpdateCycleForUpdateCheck:(SPUUpdateCheck)check error:(NSError *)error {
-    if (invalidMode()) {
+    if (invalidMode() || networkMode()) {
         if (!self.aborted || error == nil || !recover(@"cancel")) { writeMarker(@"error", @"invalid update recovery failed"); exit(99); }
-        writeMarker(@"invalid-recovered", @"restored");
+        writeMarker(networkMode() ? @"network-recovered" : @"invalid-recovered", @"restored");
         exit(0);
     }
     if (!cancelMode()) return;
