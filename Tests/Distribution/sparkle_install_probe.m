@@ -2,11 +2,21 @@
 #import <Sparkle/Sparkle.h>
 static NSString *base(void) { return [NSBundle.mainBundle objectForInfoDictionaryKey:@"FixtureState"]; }
 static void writeMarker(NSString *filename, NSString *value) { [value writeToFile:[base() stringByAppendingPathComponent:filename] atomically:YES encoding:NSUTF8StringEncoding error:NULL]; }
+static BOOL recover(NSString *action) {
+    NSTask *task = [NSTask new];
+    task.executableURL = [NSURL fileURLWithPath:[NSBundle.mainBundle objectForInfoDictionaryKey:@"FixtureHelper"]];
+    task.arguments = @[base(), [NSBundle.mainBundle objectForInfoDictionaryKey:@"FixtureSuite"], action];
+    NSError *error = nil;
+    if (![task launchAndReturnError:&error]) { writeMarker(@"error", error.description); return NO; }
+    [task waitUntilExit];
+    if (task.terminationStatus != 0) { writeMarker(@"error", [NSString stringWithFormat:@"recovery %@ failed", action]); return NO; }
+    return YES;
+}
 @interface Driver : NSObject <SPUUserDriver> @end
 @implementation Driver
 - (void)showUpdatePermissionRequest:(SPUUpdatePermissionRequest *)r reply:(void (^)(SUUpdatePermissionResponse *))reply { writeMarker(@"error",@"permission prompt"); exit(91); }
 - (void)showUserInitiatedUpdateCheckWithCancellation:(void (^)(void))c {}
-- (void)showUpdateFoundWithAppcastItem:(SUAppcastItem *)i state:(SPUUserUpdateState *)s reply:(void (^)(SPUUserUpdateChoice))reply { reply(SPUUserUpdateChoiceInstall); }
+- (void)showUpdateFoundWithAppcastItem:(SUAppcastItem *)i state:(SPUUserUpdateState *)s reply:(void (^)(SPUUserUpdateChoice))reply { if (!recover(@"prepare")) exit(98); reply(SPUUserUpdateChoiceInstall); }
 - (void)showUpdateReleaseNotesWithDownloadData:(SPUDownloadData *)d {}
 - (void)showUpdateReleaseNotesFailedToDownloadWithError:(NSError *)e {}
 - (void)showUpdateNotFoundWithError:(NSError *)e acknowledgement:(void (^)(void))a { writeMarker(@"error",e.description); exit(92); }
@@ -23,7 +33,7 @@ static void writeMarker(NSString *filename, NSString *value) { [value writeToFil
 @end
 int main(void) { @autoreleasepool {
     NSString *version = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"];
-    if ([version isEqualToString:@"101"]) { NSError *err = nil; NSString *text = [NSString stringWithContentsOfFile:[base() stringByAppendingPathComponent:@"config"] encoding:NSUTF8StringEncoding error:&err]; writeMarker(@"new-version",text ?: @"missing"); return 0; }
+    if ([version isEqualToString:@"101"]) { if (!recover(@"recover")) return 98; NSError *err = nil; NSString *text = [NSString stringWithContentsOfFile:[base() stringByAppendingPathComponent:@"config"] encoding:NSUTF8StringEncoding error:&err]; writeMarker(@"new-version",text ?: @"missing"); return 0; }
     NSApplication *app = [NSApplication sharedApplication];
     Driver *driver = [Driver new];
     SPUUpdater *updater = [[SPUUpdater alloc] initWithHostBundle:NSBundle.mainBundle applicationBundle:NSBundle.mainBundle userDriver:driver delegate:nil];

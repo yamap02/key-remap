@@ -2,7 +2,8 @@
 """Update an isolated, user-owned test app; never touches installed ReKey.
 
 The fixture uses ad-hoc signatures, a disposable EdDSA key and loopback HTTP.
-It does not test root ownership, services, Developer ID or notarization.
+It tests recovery against simulated service state, not real launchd services,
+root ownership, Developer ID or notarization.
 """
 import base64
 from functools import partial
@@ -37,6 +38,8 @@ def main():
         root = Path(directory)
         state = root / 'state'; state.mkdir()
         config = state / 'config'; config.write_text('personal-setting')
+        (state / 'service-core').write_text('enabled')
+        (state / 'service-agent').write_text('notRegistered')
         pem, key = root / 'key.pem', root / 'key'
         command('openssl', 'genpkey', '-algorithm', 'ED25519', '-out', str(pem),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -46,6 +49,9 @@ def main():
         binary = root / 'fixture-binary'
         command('xcrun', 'clang', '-fobjc-arc', '-F', str(FRAMEWORK.parent), '-framework', 'Sparkle', '-framework', 'AppKit',
                 str(ROOT / 'Tests/Distribution/sparkle_install_probe.m'), '-o', str(binary))
+        helper = root / 'recovery-fixture'
+        command('swiftc', '-parse-as-library', str(ROOT / 'Sources/ReKeyApp/UpdateServiceRecovery.swift'),
+                str(ROOT / 'Tests/Distribution/sparkle_recovery_fixture.swift'), '-o', str(helper))
         bundle_id = 'org.example.rekey.installfixture.' + uuid.uuid4().hex
         cache = Path.home() / 'Library/Caches' / bundle_id
         server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=directory))
@@ -63,7 +69,8 @@ def main():
                 info = dict(CFBundleExecutable='Fixture', CFBundleIdentifier=bundle_id, CFBundleName='Fixture',
                             CFBundlePackageType='APPL', CFBundleVersion=version,
                             CFBundleShortVersionString='1.0' if version == '100' else '1.1', LSUIElement=True,
-                            FixtureState=str(state), SUFeedURL=f'http://127.0.0.1:{server.server_port}/appcast.xml',
+                            FixtureState=str(state), FixtureHelper=str(helper), FixtureSuite=bundle_id,
+                            SUFeedURL=f'http://127.0.0.1:{server.server_port}/appcast.xml',
                             SUPublicEDKey=base64.b64encode(public).decode(), SURequireSignedFeed=True,
                             SUVerifyUpdateBeforeExtraction=True, SUEnableAutomaticChecks=False, SUAllowsAutomaticUpdates=False,
                             NSAppTransportSecurity={'NSAllowsLocalNetworking': True})
@@ -94,17 +101,22 @@ def main():
                     raise AssertionError(f'Isolated update failed: {details}; stderr: {stderr.read()[-3000:]}')
                 if marker.read_text() != 'personal-setting' or config.read_text() != 'personal-setting':
                     raise AssertionError('The fixture configuration was not retained')
+                if ((state / 'service-core').read_text() != 'enabled' or
+                    (state / 'service-agent').read_text() != 'notRegistered' or
+                    (state / 'actions').read_text().splitlines() != ['stop-core', 'start-core']):
+                    raise AssertionError('Recovery did not restore only the previously enabled service')
                 installed = root / 'old/Fixture.app/Contents/Info.plist'
                 if plistlib.loads(installed.read_bytes()).get('CFBundleVersion') != '101':
                     raise AssertionError('The fixture app was not replaced with build 101')
                 command('codesign', '--verify', '--deep', '--strict', str(root / 'old/Fixture.app'))
-                print('PASS isolated app updated 100 -> 101 and retained external configuration')
+                print('PASS isolated app updated 100 -> 101, retained configuration, and restored simulated service')
         finally:
             if process is not None and process.poll() is None:
                 process.terminate(); process.wait(timeout=5)
             server.shutdown(); server.server_close(); thread.join()
             if cache.exists():
                 shutil.rmtree(cache)
+            command(str(helper), str(state), bundle_id, 'cleanup')
 
 
 if __name__ == '__main__':
