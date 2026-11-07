@@ -15,5 +15,10 @@ app=build/ReKey.app
 [[ $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist") == 2001 ]]
 [[ $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Library/LoginItems/ReKeyAgent.app/Contents/Info.plist") == 2001 ]]
 /usr/bin/strings "$app/Contents/Library/HelperTools/rekey-core" | rg -q '^org[.]example[.]rekeytest$'
+for notice in Resources/Licenses/*; do
+  cmp "$notice" "$app/Contents/Resources/Licenses/${notice:t}"
+done
+cmp .build/checkouts/Sparkle/LICENSE "$app/Contents/Resources/Licenses/Sparkle.txt"
+cmp Vendor/VirtualHID/LICENSE.md "$app/Contents/Resources/Licenses/Karabiner-DriverKit-VirtualHIDDevice.txt"
 codesign --verify --deep --strict "$app"
 print 'PASS build identity, version, signing and invalid inputs'

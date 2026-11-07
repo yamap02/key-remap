@@ -27,7 +27,7 @@
 
 ## 初回導入とドライバ
 
-現状 ReKey は公式の [Karabiner-DriverKit-VirtualHIDDevice](https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice) に依存する。公式配布元から互換性のある署名・公証済み単独ドライバ pkg を入手し、管理者としてインストールする。インストール後、公式 Manager の `activate` を実行してから macOS が求めるシステム機能拡張をシステム設定で許可し、必要なら再起動する。ReKey の権限画面の「入力サービスを登録」で共有 Virtual HID デーモンも登録し、バックグラウンド項目と `rekey-core` の入力監視を許可する。EventViewer を使う場合は Agent のアクセシビリティも必要。公式ドライバの本体は Unlicense。ReKey が組み込む Sparkle のライセンス（同梱コンポーネントの告知を含む）と VirtualHID 本体のライセンスは app の `Contents/Resources/Licenses/` に収録する。Core にコンパイルされるヘッダー依存の個別ライセンスの網羅と収録は未完了で、配布前に確認が必要。
+現状 ReKey は公式の [Karabiner-DriverKit-VirtualHIDDevice](https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice) に依存する。公式配布元から互換性のある署名・公証済み単独ドライバ pkg を入手し、管理者としてインストールする。インストール後、公式 Manager の `activate` を実行してから macOS が求めるシステム機能拡張をシステム設定で許可し、必要なら再起動する。ReKey の権限画面の「入力サービスを登録」で共有 Virtual HID デーモンも登録し、バックグラウンド項目と `rekey-core` の入力監視を許可する。EventViewer を使う場合は Agent のアクセシビリティも必要。公式ドライバの本体は Unlicense。ReKey が組み込む Sparkle のライセンス（同梱コンポーネントの告知を含む）と VirtualHID 本体のライセンスは app の `Contents/Resources/Licenses/` に収録する。Core がコンパイルするヘッダーを依存解析し、Asio・pqrs・Microsoft GSL・nlohmann/json・nod・type_safe のライセンスと著作権表示も同じ場所に収録する。各ヘッダーの正確な取得元リビジョンは vendored tree に揃っていないため、更新時と公開前に依存・通知を再監査する。
 
 公式 Manager はインストールされた公式 pkg のものを利用する：
 
