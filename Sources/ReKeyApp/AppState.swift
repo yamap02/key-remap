@@ -38,6 +38,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     @Published var selectedDevice = "all"
     @Published var error: String?
     @Published var saveStatus = "読み込み中…"
+    @Published private(set) var recoveringServices = false
     var accessibility: Bool { runtime.agentAccessibilityReady }
     var inputMonitoringReady: Bool { runtime.inputMonitoringReady }
     var eventViewerReady: Bool { runtime.eventViewerReady }
@@ -77,6 +78,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         guard startMonitoring else { return }
         refreshSystem()
         Task {
+            await recoverServicesAfterUpdate()
             do { try await retireLegacyOutputService() }
             catch { self.error = "旧入力サービスを停止できませんでした: \(error.localizedDescription)" }
         }
@@ -200,6 +202,28 @@ enum SettingsPage: String, CaseIterable, Identifiable {
                 await registerCurrentServices()
             } catch { self.error = "旧入力サービスを停止できませんでした: \(error.localizedDescription)" }
         }
+    }
+    private func recoverServicesAfterUpdate() async {
+        guard let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String else { return }
+        let services = ["core": SMAppService.daemon(plistName: "jp.example.rekey.core.plist"),
+                        "agent": SMAppService.agent(plistName: "jp.example.rekey.agent.plist")]
+        let operations = UpdateServiceRecovery.Operations(
+            status: { name in
+                guard let service = services[name] else { return .unavailable }
+                switch service.status {
+                case .enabled: return .enabled
+                case .notRegistered: return .notRegistered
+                case .requiresApproval: return .requiresApproval
+                default: return .unavailable
+                }
+            },
+            stop: { name in if let service = services[name] { try await service.unregister() } },
+            start: { name in if let service = services[name] { try service.register() } }
+        )
+        recoveringServices = true
+        defer { recoveringServices = false; refreshSystem() }
+        do { try await UpdateServiceRecovery().recover(build: build, operations: operations) }
+        catch { self.error = "更新後の入力サービスを復旧できませんでした。権限画面で状態を確認してください: \(error.localizedDescription)" }
     }
     private func retireLegacyOutputService() async throws {
         let legacy = SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist")

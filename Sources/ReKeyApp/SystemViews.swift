@@ -99,7 +99,7 @@ struct PermissionsView: View {
                 permission("アクセシビリティ", icon: "accessibility", status: state.accessibility ? "許可済み" : "EventViewer 使用時のみ必要", ready: state.accessibility, description: "通常のリマップには不要です。EventViewer のパスワード欄確認にのみ使用します。必要な場合は ReKeyAgent のみ許可してください。ReKey の許可は不要です。") { state.requestAccessibility(); state.openPrivacy("Privacy_Accessibility") }
                 permission("仮想 HID ドライバ", icon: "puzzlepiece.extension", status: state.driverActive ? "接続済み（評価用）" : "未接続", ready: state.driverActive, description: "開発版は Karabiner の公開ドライバを利用します。「確認する」で接続用デーモンも登録します。バックグラウンド項目とドライバ拡張を許可してください。") { state.setupDriver() }
                 permission("入力サービス", icon: "gearshape.2", status: state.daemonStatus, ready: state.daemonStatus == "稼働中", description: "rekey-core が入力の取得・変換・仮想 HID 出力を行います。root サービスは1つです。ReKeyAgent はユーザー権限で動作します。") { if let u = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") { NSWorkspace.shared.open(u) } }
-                HStack { Button("入力サービスを登録") { state.registerServices() }; Button("登録を解除") { state.unregisterServices() }; Button("入力サービスを再起動") { state.restartServices() } }
+                HStack { Button("入力サービスを登録") { state.registerServices() }; Button("登録を解除") { state.unregisterServices() }; Button("入力サービスを再起動") { state.restartServices() } }.disabled(state.recoveringServices)
                 if let runtimeError = state.runtime.status?.error, !runtimeError.isEmpty { Text(runtimeError).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
                 GroupBox {
                     Label("Karabiner と同時にキーボードを占有しないでください。既存のリマッパーが稼働している場合、ReKey は自動的に入力を奪いません。", systemImage: "info.circle").font(.callout).foregroundStyle(.secondary).padding(8)
