@@ -20,6 +20,28 @@ import Foundation
 
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
+    var hasPendingRecovery: Bool { defaults.object(forKey: pendingKey) != nil }
+
+    // Persist the exact enabled set before stopping anything. The next app can
+    // restore it after an update, a failed stop, or an interrupted process.
+    func prepare(operations: Operations) async throws {
+        guard !hasPendingRecovery else { throw RecoveryError.unavailable("pending recovery") }
+        var enabled: [String] = []
+        for name in serviceNames {
+            switch operations.status(name) {
+            case .enabled: enabled.append(name)
+            case .notRegistered, .requiresApproval: break
+            case .unavailable: throw RecoveryError.unavailable(name)
+            }
+        }
+        defaults.set(enabled, forKey: pendingKey)
+        guard defaults.synchronize() else { throw RecoveryError.unavailable("recovery record") }
+        for name in enabled {
+            try await operations.stop(name)
+            guard operations.status(name) == .notRegistered else { throw RecoveryError.unavailable(name) }
+        }
+    }
+
     func recover(build: String, operations: Operations) async throws {
         guard !build.isEmpty else { return }
         let previous = defaults.string(forKey: buildKey)

@@ -212,3 +212,5 @@
 "更新の確認時に配信サーバーへ接続します。インストール時に管理者認証を求められる場合があります。" = "Checking for updates connects to the distribution server. Installation may require administrator authorization.";
 "このビルドには更新配信先と公開鍵が設定されていません。" = "This build does not have an update feed and public key configured.";
 "ReKey について" = "About ReKey";
+
+"更新処理中" = "Updating";

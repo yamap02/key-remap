@@ -39,6 +39,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     @Published var error: String?
     @Published var saveStatus = "読み込み中…"
     @Published private(set) var recoveringServices = false
+    @Published private(set) var updatePrepared = false
+    @Published private(set) var serviceOperationInProgress = false
+    private let updateRecovery = UpdateServiceRecovery()
     var accessibility: Bool { runtime.agentAccessibilityReady }
     var inputMonitoringReady: Bool { runtime.inputMonitoringReady }
     var eventViewerReady: Bool { runtime.eventViewerReady }
@@ -65,8 +68,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     var scopeLabel: String { selectedDevice == "all" ? "すべてのキーボード" : devices.first(where: { $0.id == selectedDevice })?.name ?? selectedDevice }
     var isPaused: Bool { config.global.paused || (runtime.status?.paused ?? false) }
     var operational: Bool { daemonStatus == "稼働中" && driverActive && !config.global.paused }
-    var statusTitle: String { isPaused ? "一時停止中" : operational ? "リマップ有効" : "セットアップが必要です" }
-    var statusColor: Color { isPaused ? .secondary : operational ? .green : .orange }
+    var statusTitle: String { recoveringServices || updatePrepared ? "更新処理中" : isPaused ? "一時停止中" : operational ? "リマップ有効" : "セットアップが必要です" }
+    var statusColor: Color { recoveringServices || updatePrepared ? .orange : isPaused ? .secondary : operational ? .green : .orange }
     init(store: ConfigurationStore = ConfigurationStore(), runtime: RuntimeClient = RuntimeClient(), startMonitoring: Bool = true) {
         self.store = store
         self.runtime = runtime
@@ -74,7 +77,13 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         runtimeChanges = runtime.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         showWelcome = !FileManager.default.fileExists(atPath: store.url.path)
         reload()
-        updates = UpdateController(automaticChecks: config.global.check_for_updates)
+        updates = UpdateController(automaticChecks: config.global.check_for_updates,
+            prepare: { [weak self] in
+                guard let self else { throw NSError(domain: "ReKey.Update", code: 1) }
+                try await self.prepareServicesForUpdate()
+            },
+            preparationFailed: { [weak self] error in self?.handleUpdateFailure(error, preparation: true) },
+            aborted: { [weak self] error in self?.handleUpdateFailure(error, preparation: false) })
         guard startMonitoring else { return }
         refreshSystem()
         Task {
@@ -196,18 +205,20 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         registerServices()
     }
     func registerServices() {
+        guard !recoveringServices, !updatePrepared, !serviceOperationInProgress else { return }
+        serviceOperationInProgress = true
         Task {
+            defer { serviceOperationInProgress = false }
             do {
                 try await retireLegacyOutputService()
                 await registerCurrentServices()
             } catch { self.error = "旧入力サービスを停止できませんでした: \(error.localizedDescription)" }
         }
     }
-    private func recoverServicesAfterUpdate() async {
-        guard let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String else { return }
+    private func updateServiceOperations() -> UpdateServiceRecovery.Operations {
         let services = ["core": SMAppService.daemon(plistName: "jp.example.rekey.core.plist"),
                         "agent": SMAppService.agent(plistName: "jp.example.rekey.agent.plist")]
-        let operations = UpdateServiceRecovery.Operations(
+        return UpdateServiceRecovery.Operations(
             status: { name in
                 guard let service = services[name] else { return .unavailable }
                 switch service.status {
@@ -220,10 +231,36 @@ enum SettingsPage: String, CaseIterable, Identifiable {
             stop: { name in if let service = services[name] { try await service.unregister() } },
             start: { name in if let service = services[name] { try service.register() } }
         )
+    }
+    private var currentBuild: String? { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String }
+    private func prepareServicesForUpdate() async throws {
+        guard !recoveringServices, !updatePrepared, !serviceOperationInProgress, currentBuild != nil else {
+            throw NSError(domain: "ReKey.Update", code: 2, userInfo: [NSLocalizedDescriptionKey: "入力サービスの復旧中です。"])
+        }
         recoveringServices = true
         defer { recoveringServices = false; refreshSystem() }
-        do { try await UpdateServiceRecovery().recover(build: build, operations: operations) }
-        catch { self.error = "更新後の入力サービスを復旧できませんでした。権限画面で状態を確認してください: \(error.localizedDescription)" }
+        saving?.cancel(); saving = nil
+        flush()
+        guard !dirty else { throw NSError(domain: "ReKey.Update", code: 3, userInfo: [NSLocalizedDescriptionKey: "設定を保存できませんでした。"] ) }
+        try await updateRecovery.prepare(operations: updateServiceOperations())
+        updatePrepared = true
+    }
+    @discardableResult private func recoverServicesAfterUpdate() async -> Bool {
+        guard !recoveringServices, !serviceOperationInProgress, let build = currentBuild else { return false }
+        recoveringServices = true
+        defer { recoveringServices = false; updatePrepared = false; refreshSystem() }
+        do { try await updateRecovery.recover(build: build, operations: updateServiceOperations()); return true }
+        catch { self.error = "更新後の入力サービスを復旧できませんでした。権限画面で状態を確認してください: \(error.localizedDescription)"; return false }
+    }
+    private func handleUpdateFailure(_ failure: Error, preparation: Bool) {
+        guard preparation || updateRecovery.hasPendingRecovery || updatePrepared else { return }
+        Task {
+            let recovered = await recoverServicesAfterUpdate()
+            if preparation {
+                let message = "更新前に入力サービスを停止できませんでした。サービスを確認し、ReKey を再起動してから更新を再試行してください: \(failure.localizedDescription)"
+                self.error = recovered ? message : message + "\n" + (self.error ?? "入力サービスの復旧状態を確認してください。")
+            }
+        }
     }
     private func retireLegacyOutputService() async throws {
         let legacy = SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist")
@@ -269,7 +306,10 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         for service in services where service.status != .notRegistered && service.status != .notFound { try service.unregister() }
     }
     func restartServices() {
+        guard !recoveringServices, !updatePrepared, !serviceOperationInProgress else { return }
+        serviceOperationInProgress = true
         Task {
+            defer { serviceOperationInProgress = false }
             do {
                 let services = [SMAppService.daemon(plistName: "jp.example.rekey.core.plist"), SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist"), SMAppService.agent(plistName: "jp.example.rekey.agent.plist")]
                 // The async overload waits for the old process to exit before re-registering.
@@ -281,10 +321,12 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         }
     }
     func unregisterServices() {
+        guard !recoveringServices, !updatePrepared, !serviceOperationInProgress else { return }
         do { try stopServices(); refreshSystem() }
         catch { self.error = error.localizedDescription }
     }
     func uninstall(removeSettings: Bool) {
+        guard !recoveringServices, !updatePrepared, !serviceOperationInProgress else { return }
         do {
             try stopServices()
             if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }

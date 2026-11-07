@@ -8,6 +8,7 @@ import ReKeyModel
     var body: some Scene {
         Window("ReKey", id: "settings") {
             SettingsView(state: state).environment(\.locale, language == "system" ? .autoupdatingCurrent : Locale(identifier: language))
+                .disabled(state.recoveringServices || state.updatePrepared)
                 .frame(minWidth: 920, minHeight: 640)
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                     if !state.uninstalling { state.flush(); state.runtime.shutdown() }
@@ -18,10 +19,10 @@ import ReKeyModel
         .commands {
             CommandGroup(replacing: .newItem) { Button("設定を開く…") { openSettings() }.keyboardShortcut(",") }
             CommandMenu("ReKey") {
-                Button(L(state.isPaused ? "再開" : "一時停止")) { state.togglePause() }.keyboardShortcut("p", modifiers: [.control, .option, .command])
-                Button("設定を再読込") { state.reload(reloadEngine: true) }.keyboardShortcut("r", modifiers: [.command, .shift])
-                Button("設定をインポート…") { state.importFile() }
-                Button("設定を書き出す…") { state.exportFile() }
+                Button(L(state.isPaused ? "再開" : "一時停止")) { state.togglePause() }.keyboardShortcut("p", modifiers: [.control, .option, .command]).disabled(state.recoveringServices || state.updatePrepared)
+                Button("設定を再読込") { state.reload(reloadEngine: true) }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(state.recoveringServices || state.updatePrepared)
+                Button("設定をインポート…") { state.importFile() }.disabled(state.recoveringServices || state.updatePrepared)
+                Button("設定を書き出す…") { state.exportFile() }.disabled(state.recoveringServices || state.updatePrepared)
             }
         }
         Window("ReKey EventViewer", id: "events") {
@@ -29,6 +30,7 @@ import ReKeyModel
         }.defaultSize(width: 1040, height: 640)
         MenuBarExtra {
             MenuContent(state: state).environment(\.locale, language == "system" ? .autoupdatingCurrent : Locale(identifier: language))
+                .disabled(state.recoveringServices || state.updatePrepared)
         } label: {
             Image(nsImage: state.operational ? AppIcons.active : state.isPaused ? AppIcons.paused : AppIcons.attention)
                 .accessibilityLabel("ReKey · \(L(state.statusTitle))")
