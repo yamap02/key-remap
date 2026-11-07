@@ -171,6 +171,26 @@ import ReKeyModel
     do { try await recovery.ensureStopped(operations: fixture.operations()); Issue.record("Unexpected service must block update") } catch {}
 }
 
+@Test @MainActor func oldBuildStopsServicesBeforeReportingInterruptedUpdate() async throws {
+    let fixture = RecoveryFixture(); defer { fixture.clean() }
+    let recovery = UpdateServiceRecovery(defaults: fixture.defaults)
+    let normal = fixture.operations()
+    let interrupted = UpdateServiceRecovery.Operations(status: normal.status, stop: { _ in
+        throw NSError(domain: "test", code: 1)
+    }, start: normal.start)
+    do { try await recovery.prepare(build: "10", operations: interrupted); Issue.record("Stop must fail") } catch {}
+    #expect(recovery.hasPendingRecovery)
+    #expect(fixture.status["core"] == .enabled)
+    fixture.actions = []
+    do {
+        try await UpdateServiceRecovery(defaults: fixture.defaults).recover(build: "10", operations: normal)
+        Issue.record("The old build must remain in the pending state")
+    } catch UpdateServiceRecovery.RecoveryError.pendingUpdate {}
+    #expect(fixture.actions == ["stop-core"])
+    #expect(fixture.status["core"] == .notRegistered)
+    #expect(recovery.hasPendingRecovery)
+}
+
 @Test @MainActor func malformedPendingRecoveryFailsClosed() async throws {
     let fixture = RecoveryFixture(); defer { fixture.clean() }
     fixture.defaults.set("invalid", forKey: "updateRecovery.pendingServices")

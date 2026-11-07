@@ -63,6 +63,6 @@ struct MenuContent: View {
         Button("設定を再読込") { state.reload(reloadEngine: true) }.disabled(state.recoveringServices || state.updatePrepared)
         Divider()
         Button("ReKey をアンインストール…") { state.showUninstall = true; openWindow(id: "settings"); NSApp.activate(ignoringOtherApps: true) }.disabled(state.recoveringServices || state.updatePrepared)
-        Button("ReKey を終了") { NSApp.terminate(nil) }.keyboardShortcut("q").disabled(state.recoveringServices)
+        Button("ReKey を終了") { NSApp.terminate(nil) }.keyboardShortcut("q").disabled(state.recoveringServices || state.unsafePendingUpdate)
     }
 }

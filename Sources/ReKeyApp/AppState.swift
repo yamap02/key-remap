@@ -40,9 +40,12 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     @Published var error: String?
     @Published var saveStatus = "読み込み中…"
     @Published private(set) var recoveringServices = false {
-        didSet { TerminationGate.updateServiceOperationInProgress = recoveringServices }
+        didSet { updateTerminationGate() }
     }
     @Published private(set) var updatePrepared = false
+    @Published private(set) var unsafePendingUpdate = false {
+        didSet { updateTerminationGate() }
+    }
     @Published private(set) var updateWarning: String?
     @Published private(set) var serviceOperationInProgress = false
     private let updateRecovery = UpdateServiceRecovery()
@@ -89,6 +92,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
             preparationFailed: { [weak self] error in self?.handleUpdateFailure(error, preparation: true) },
             pendingInstallFailed: { [weak self] error in
                 self?.updatePrepared = true
+                self?.unsafePendingUpdate = true
                 self?.updateWarning = "保留中の更新を安全に続行できません。「更新を確認」で更新をキャンセルしてください: \(error.localizedDescription)"
             },
             aborted: { [weak self] error in self?.handleUpdateFailure(error, preparation: false) })
@@ -246,16 +250,30 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         )
     }
     private var currentBuild: String? { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String }
+    private func updateTerminationGate() {
+        TerminationGate.updateServiceOperationInProgress = recoveringServices || unsafePendingUpdate
+    }
     private func prepareServicesForUpdate() async throws {
         guard !recoveringServices, !serviceOperationInProgress, let build = currentBuild else {
             throw NSError(domain: "ReKey.Update", code: 2, userInfo: [NSLocalizedDescriptionKey: "入力サービスの復旧中です。"])
         }
         recoveringServices = true
         defer { recoveringServices = false; refreshSystem() }
-        try saveBeforeUpdate()
-        if updatePrepared { try await updateRecovery.ensureStopped(operations: updateServiceOperations()) }
-        else { try await updateRecovery.prepare(build: build, operations: updateServiceOperations()) }
-        updatePrepared = true
+        do {
+            try saveBeforeUpdate()
+            if updatePrepared { try await updateRecovery.ensureStopped(operations: updateServiceOperations()) }
+            else { try await updateRecovery.prepare(build: build, operations: updateServiceOperations()) }
+            updatePrepared = true
+            unsafePendingUpdate = false
+        } catch {
+            // A staged update or a partially stopped service may remain until
+            // Sparkle finishes cancelling. Don't allow install-on-quit in that gap.
+            if updatePrepared || updateRecovery.hasPendingRecovery {
+                updatePrepared = true
+                unsafePendingUpdate = true
+            }
+            throw error
+        }
     }
     @discardableResult private func recoverServicesAfterUpdate(allowSameBuild: Bool = false) async -> Bool {
         guard !recoveringServices, !serviceOperationInProgress, let build = currentBuild else { return false }
@@ -263,13 +281,15 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         defer { recoveringServices = false; refreshSystem() }
         do {
             try await updateRecovery.recover(build: build, operations: updateServiceOperations(), allowSameBuild: allowSameBuild)
-            updatePrepared = false; updateWarning = nil; return true
+            updatePrepared = false; unsafePendingUpdate = false; updateWarning = nil; return true
         } catch UpdateServiceRecovery.RecoveryError.pendingUpdate {
             updatePrepared = true
+            unsafePendingUpdate = false
             updateWarning = "更新を再開するか、キャンセルしてください。"
             return false
         } catch {
             updatePrepared = updateRecovery.hasPendingRecovery
+            unsafePendingUpdate = updatePrepared
             let message = "更新後の入力サービスを復旧できませんでした。バックグラウンド項目を確認してください: \(error.localizedDescription)"
             if updatePrepared { updateWarning = message } else { self.error = message }
             return false

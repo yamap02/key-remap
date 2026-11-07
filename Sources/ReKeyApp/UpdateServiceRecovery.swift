@@ -87,7 +87,14 @@ import Foundation
         var pending: [String]?
         if hasPendingRecovery {
             let record = try pendingRecord()
-            if record.origin == build && !allowSameBuild { throw RecoveryError.pendingUpdate }
+            if record.origin == build && !allowSameBuild {
+                // The previous process may have exited after persisting the
+                // intent but before it stopped all services. A staged update
+                // can still install on quit, so recheck before reporting the
+                // pending state rather than leaving Core running.
+                try await ensureStopped(operations: operations)
+                throw RecoveryError.pendingUpdate
+            }
             pending = record.services
         }
         if pending == nil {
