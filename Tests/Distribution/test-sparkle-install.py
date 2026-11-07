@@ -11,6 +11,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import plistlib
 import shutil
+import socket
 import subprocess
 import tempfile
 import threading
@@ -24,9 +25,25 @@ SIGN_UPDATE = ROOT / 'build/sparkle-tools/bin/sign_update'
 
 class QuietHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
-        if self.path == '/update.zip' and getattr(self.server, 'fail_download', False):
-            self.send_error(404)
-            return
+        if self.path == '/update.zip':
+            mode = getattr(self.server, 'fail_download', '')
+            if mode == 'not-found':
+                self.send_error(404)
+                return
+            if mode == 'disconnect':
+                payload = Path(self.translate_path(self.path))
+                self.send_response(200)
+                self.send_header('Content-Length', str(payload.stat().st_size))
+                self.end_headers()
+                with payload.open('rb') as stream:
+                    chunk = stream.read(16384)
+                assert len(chunk) == 16384 and payload.stat().st_size > len(chunk)
+                self.wfile.write(chunk)
+                self.wfile.flush()
+                self.server.truncated_responses += 1
+                self.connection.shutdown(socket.SHUT_RDWR)
+                self.close_connection = True
+                return
         super().do_GET()
 
     def log_message(self, *_):
@@ -118,10 +135,10 @@ def main():
                 raise AssertionError(f'Invalid signature recovery failed: {invalid.stderr[-3000:]}')
             print('PASS invalid update signature restored simulated service and preserved app and settings')
             (state / 'actions').unlink()
-            server.fail_download = True
+            server.fail_download = 'not-found'
             network = subprocess.run([str(root / 'network/Fixture.app/Contents/MacOS/Fixture')],
                                      capture_output=True, text=True, timeout=30)
-            server.fail_download = False
+            server.fail_download = ''
             if (network.returncode != 0 or not (state / 'network-recovered').exists() or
                 (state / 'service-core').read_text() != 'enabled' or
                 (state / 'service-agent').read_text() != 'notRegistered' or
@@ -130,6 +147,23 @@ def main():
                 plistlib.loads((root / 'network/Fixture.app/Contents/Info.plist').read_bytes())['CFBundleVersion'] != '100'):
                 raise AssertionError(f'Download failure recovery failed: {network.stderr[-3000:]}')
             print('PASS HTTP download failure restored simulated service and preserved app and settings')
+            (state / 'actions').unlink()
+            (state / 'network-recovered').unlink()
+            command(str(helper), str(state), bundle_id + '.network', 'cleanup')
+            server.truncated_responses = 0
+            server.fail_download = 'disconnect'
+            interrupted = subprocess.run([str(root / 'network/Fixture.app/Contents/MacOS/Fixture')],
+                                         capture_output=True, text=True, timeout=30)
+            server.fail_download = ''
+            if (interrupted.returncode != 0 or server.truncated_responses < 1 or
+                not (state / 'network-recovered').exists() or
+                (state / 'service-core').read_text() != 'enabled' or
+                (state / 'service-agent').read_text() != 'notRegistered' or
+                (state / 'actions').read_text().splitlines() != ['stop-core', 'start-core'] or
+                config.read_text() != 'personal-setting' or
+                plistlib.loads((root / 'network/Fixture.app/Contents/Info.plist').read_bytes())['CFBundleVersion'] != '100'):
+                raise AssertionError(f'Interrupted download recovery failed: {interrupted.stderr[-3000:]}')
+            print('PASS interrupted download restored simulated service and preserved app and settings')
             (state / 'actions').unlink()
             with (root / 'stderr').open('w+') as stderr:
                 process = subprocess.Popen([str(root / 'old/Fixture.app/Contents/MacOS/Fixture')],
