@@ -8,6 +8,21 @@ set -eu
     echo 'ReKey: cannot inspect the system launchd domain' >&2
     exit 1
 }
+# A running old UI could register the Core again during installation, while
+# an old Agent could keep executing after its bundle has been replaced. Do
+# not kill either process: ask the user to stop services and quit first.
+for process in ReKey ReKeyAgent; do
+    if /usr/bin/pgrep -x "$process" >/dev/null 2>&1; then
+        echo "ReKey: $process is running; stop ReKey services and quit before installing" >&2
+        exit 1
+    else
+        result=$?
+        if [ "$result" -ne 1 ]; then
+            echo "ReKey: cannot inspect $process processes" >&2
+            exit 1
+        fi
+    fi
+done
 # The build replaces the first label with the validated product ID. Keep
 # development-era labels so an initial pkg upgrade stops the older Core.
 for service in @REKEY_CORE_LABEL@ jp.example.rekey.core jp.example.rekey.vhid; do
@@ -25,7 +40,7 @@ done
 
 # bootout may return before the process has fully exited. A conservative name
 # check can also reject an unrelated same-named process; it never kills one.
-for process in rekey-core rekey-vhid; do
+for process in ReKey ReKeyAgent rekey-core rekey-vhid; do
     attempts=0
     while :; do
         if /usr/bin/pgrep -x "$process" >/dev/null 2>&1; then

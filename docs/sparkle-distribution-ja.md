@@ -6,7 +6,7 @@
 
 通常の app 更新を優先して検証する。現在の pkg は `/Applications/ReKey.app` を root:wheel、他ユーザーから書き込み不可にし、Core はその app と Agent の指定要件を XPC に適用する。2026-11-07、権限を変更せず Sparkle 2.9.6 の権限判定を呼び、現在の root 所有 `/Applications/ReKey.app` は管理者認証が必要、ユーザー所有の一時 app は不要と判定された（`python3 Tests/Distribution/test-sparkle-authorization.py --root-bundle /Applications/ReKey.app`）。この試験は固定版の非公開 API を診断にだけ使用し、更新の実行やアプリの変更はしない。ソース上も認証が必要なら system domain を使う。Sparkle 2.9.6 の通常インストーラは旧 app の所有者・グループを新 app に合わせようとするが、失敗を致命的エラーにしない。したがってコードの存在だけでは root 所有が維持される保証にならない。認証が必要との判定は、認証成功後に所有権が正しく維持される証明にはならない。更新後に全階層の所有権とモード、Core の新しい署名要件および接続、Agent・Core の旧プロセス停止を確認する必要がある。この環境ではパスワードなしの管理者操作は利用できず、署名済み製品版の置換試験は未実施。
 
-成立しない場合のみ flat pkg を検討する。pkg 更新には管理者認証が毎回必要で、サイレントインストール、差分更新、通常の `generate_appcast` の利用に制限がある。pkg の preinstall は launchd の停止失敗、Core/VHID の残存やプロセス検査失敗を検出するとインストールを中止する。停止後にインストールが中断すると自動再登録は未対応で、postinstall は権限を設定するだけ。実機の停止・失敗時の復旧や Agent の再登録は未検証。現状の pkg を Sparkle 更新として配布しない。[Sparkle package updates](https://sparkle-project.org/documentation/package-updates/) / [publishing](https://sparkle-project.org/documentation/publishing/)
+成立しない場合のみ flat pkg を検討する。pkg 更新には管理者認証が毎回必要で、サイレントインストール、差分更新、通常の `generate_appcast` の利用に制限がある。初回導入 pkg で既存版を置き換える場合も、先に ReKey のサービスを停止し、アプリを終了する。preinstall は旧 UI または Agent が残っていれば停止前に中止し、launchd の停止失敗、プロセスの残存や検査失敗を検出した場合も中止する。プロセス名の確認は同名の別アプリにも反応する。確認後に別プロセスが起動する競合、旧 Agent の launchd 登録の移行、停止後にインストールが中断した場合の自動再登録は未解決で、postinstall は権限を設定するだけ。実機の停止・失敗時の復旧や Agent の再登録は未検証。現状の pkg を Sparkle 更新として配布しない。[Sparkle package updates](https://sparkle-project.org/documentation/package-updates/) / [publishing](https://sparkle-project.org/documentation/publishing/)
 
 ## 現在の実装と検証
 
