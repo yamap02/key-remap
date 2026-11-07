@@ -58,7 +58,7 @@ def main():
         thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
         process = None
         try:
-            for name, version in [('old', '100'), ('new', '101')]:
+            for name, version in [('cancel', '100'), ('old', '100'), ('new', '101')]:
                 app = root / name / 'Fixture.app'
                 contents = app / 'Contents'
                 (contents / 'MacOS').mkdir(parents=True); (contents / 'Frameworks').mkdir()
@@ -66,10 +66,11 @@ def main():
                 framework = contents / 'Frameworks/Sparkle.framework'
                 command('ditto', str(FRAMEWORK), str(framework))
                 command('install_name_tool', '-add_rpath', '@executable_path/../Frameworks', str(contents / 'MacOS/Fixture'))
-                info = dict(CFBundleExecutable='Fixture', CFBundleIdentifier=bundle_id, CFBundleName='Fixture',
+                fixture_id = bundle_id + '.cancel' if name == 'cancel' else bundle_id
+                info = dict(CFBundleExecutable='Fixture', CFBundleIdentifier=fixture_id, CFBundleName='Fixture',
                             CFBundlePackageType='APPL', CFBundleVersion=version,
                             CFBundleShortVersionString='1.0' if version == '100' else '1.1', LSUIElement=True,
-                            FixtureState=str(state), FixtureHelper=str(helper), FixtureSuite=bundle_id,
+                            FixtureState=str(state), FixtureHelper=str(helper), FixtureSuite=fixture_id, FixtureMode=name,
                             SUFeedURL=f'http://127.0.0.1:{server.server_port}/appcast.xml',
                             SUPublicEDKey=base64.b64encode(public).decode(), SURequireSignedFeed=True,
                             SUVerifyUpdateBeforeExtraction=True, SUEnableAutomaticChecks=False, SUAllowsAutomaticUpdates=False,
@@ -86,6 +87,16 @@ def main():
             feed = root / 'appcast.xml'
             feed.write_text(f'''<?xml version="1.0"?><rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><title>Probe</title><item><title>Test</title><sparkle:version>101</sparkle:version><sparkle:shortVersionString>1.1</sparkle:shortVersionString><enclosure url="http://127.0.0.1:{server.server_port}/update.zip" sparkle:edSignature="{signature}" length="{archive.stat().st_size}" type="application/octet-stream"/></item></channel></rss>''')
             command(str(SIGN_UPDATE), '--ed-key-file', str(key), str(feed), stdout=subprocess.DEVNULL)
+            cancelled = subprocess.run([str(root / 'cancel/Fixture.app/Contents/MacOS/Fixture')],
+                                       capture_output=True, text=True, timeout=30)
+            if (cancelled.returncode != 0 or not (state / 'cancelled').exists() or
+                (state / 'service-core').read_text() != 'enabled' or
+                (state / 'service-agent').read_text() != 'notRegistered' or
+                (state / 'actions').read_text().splitlines() != ['stop-core', 'start-core'] or
+                plistlib.loads((root / 'cancel/Fixture.app/Contents/Info.plist').read_bytes())['CFBundleVersion'] != '100'):
+                raise AssertionError(f'Cancellation recovery failed: {cancelled.stderr[-3000:]}')
+            print('PASS cancelled Sparkle download restored simulated service without replacing app')
+            (state / 'actions').unlink()
             with (root / 'stderr').open('w+') as stderr:
                 process = subprocess.Popen([str(root / 'old/Fixture.app/Contents/MacOS/Fixture')],
                                            stdout=subprocess.DEVNULL, stderr=stderr)
@@ -116,7 +127,11 @@ def main():
             server.shutdown(); server.server_close(); thread.join()
             if cache.exists():
                 shutil.rmtree(cache)
+            cancel_cache = Path.home() / 'Library/Caches' / (bundle_id + '.cancel')
+            if cancel_cache.exists():
+                shutil.rmtree(cancel_cache)
             command(str(helper), str(state), bundle_id, 'cleanup')
+            command(str(helper), str(state), bundle_id + '.cancel', 'cleanup')
 
 
 if __name__ == '__main__':

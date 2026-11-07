@@ -21,7 +21,7 @@
 - 署名 identity がない開発版は ad-hoc 署名かつ Hardened Runtime を無効にする。Team ID のない ad-hoc app で Hardened Runtime を有効にすると Sparkle framework の読み込みが拒否されたため。公開用 Developer ID 署名では Hardened Runtime とタイムスタンプを必須とする。
 - Sparkle を使う一時的なユーザー所有 app で、署名済みローカル feed から build 100 → 101 のアプリ置換と再起動、app 外の設定ファイル保持、置換後の ad-hoc 署名整合性を確認した（`Tests/Distribution/test-sparkle-install.py`）。実際の `UpdateServiceRecovery` を使い、旧 app が模擬 Core を停止、新 app が記録を読み直して以前有効だった模擬 Core のみ再登録することも確認した。サービス状態は一時ファイルで代用しており、通常更新の一部の確認に限る。root 所有、実際の launchd・ReKey のサービスと XPC、Developer ID、公証、HTTPS は対象外。
 - 実際の Sparkle 2.9.6 を一時的な試験 app に組み込み、署名済みローカル feed について更新あり・なし、feed 改ざん拒否、通信失敗、同じ長さの改ざん済み更新ファイルの取得後・展開前の EdDSA 署名拒否を確認した（`Tests/Distribution/test-sparkle-probe.py`）。試験は loopback HTTP と使い捨て鍵で、取得する試験ファイルはインストールできないデータに限定し、実行やインストールはしない。本番 HTTPS・配布鍵・ReKey の更新 UI は未検証。通常 app の root 所有維持、更新中断と物理キー解放、実機での設定保持とサービス再接続も未検証。署名済み製品版・公証・GitHub への公開も未実施。
-- ダウンロードの取消しは Sparkle がエラーなしでサイクルを終了するため、専用コールバックを受けて終了後にサービス復旧を開始する。使い捨て app・鍵・ローカル feed を用いた Sparkle 2.9.6 の試験でも、取消し通知の後にエラーなしの終了通知が来ることを確認した。更新選択で Core を停止し、取消し後に元々有効だった Core だけを再登録する流れはモックで検証した。実際の ReKey UI とサービスでの取消しは未検証。
+- ダウンロードの取消しは Sparkle がエラーなしでサイクルを終了するため、専用コールバックを受けて終了後にサービス復旧を開始する。使い捨て app・鍵・ローカル feed を用いた Sparkle 2.9.6 の試験でも、取消し通知の後にエラーなしの終了通知が来ることを確認した。別の隔離試験では、実際の Sparkle のダウンロードを取消し、終了通知後に `UpdateServiceRecovery` が以前有効だった模擬 Core を復旧し、旧 app が置換されないことを確認した。試験用の独自 driver と delegate、ファイルで模擬したサービスを使用しており、実際の ReKey UI と launchd サービスでの取消しは未検証。
 
 ## 出荷前に必要なもの
 

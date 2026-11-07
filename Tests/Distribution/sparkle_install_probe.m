@@ -1,6 +1,7 @@
 #import <AppKit/AppKit.h>
 #import <Sparkle/Sparkle.h>
 static NSString *base(void) { return [NSBundle.mainBundle objectForInfoDictionaryKey:@"FixtureState"]; }
+static BOOL cancelMode(void) { return [[NSBundle.mainBundle objectForInfoDictionaryKey:@"FixtureMode"] isEqualToString:@"cancel"]; }
 static void writeMarker(NSString *filename, NSString *value) { [value writeToFile:[base() stringByAppendingPathComponent:filename] atomically:YES encoding:NSUTF8StringEncoding error:NULL]; }
 static BOOL recover(NSString *action) {
     NSTask *task = [NSTask new];
@@ -21,7 +22,7 @@ static BOOL recover(NSString *action) {
 - (void)showUpdateReleaseNotesFailedToDownloadWithError:(NSError *)e {}
 - (void)showUpdateNotFoundWithError:(NSError *)e acknowledgement:(void (^)(void))a { writeMarker(@"error",e.description); exit(92); }
 - (void)showUpdaterError:(NSError *)e acknowledgement:(void (^)(void))a { writeMarker(@"error",e.description); exit(93); }
-- (void)showDownloadInitiatedWithCancellation:(void (^)(void))c {}
+- (void)showDownloadInitiatedWithCancellation:(void (^)(void))c { if (cancelMode()) c(); }
 - (void)showDownloadDidReceiveExpectedContentLength:(uint64_t)l {}
 - (void)showDownloadDidReceiveDataOfLength:(uint64_t)l {}
 - (void)showDownloadDidStartExtractingUpdate {}
@@ -31,12 +32,25 @@ static BOOL recover(NSString *action) {
 - (void)showUpdateInstalledAndRelaunched:(BOOL)r acknowledgement:(void (^)(void))a { a(); }
 - (void)dismissUpdateInstallation {}
 @end
+@interface Delegate : NSObject <SPUUpdaterDelegate>
+@property BOOL cancelled;
+@end
+@implementation Delegate
+- (void)userDidCancelDownload:(SPUUpdater *)updater { self.cancelled = YES; }
+- (void)updater:(SPUUpdater *)updater didFinishUpdateCycleForUpdateCheck:(SPUUpdateCheck)check error:(NSError *)error {
+    if (!cancelMode()) return;
+    if (!self.cancelled || error != nil || !recover(@"cancel")) { writeMarker(@"error", @"cancel recovery failed"); exit(99); }
+    writeMarker(@"cancelled", @"restored");
+    exit(0);
+}
+@end
 int main(void) { @autoreleasepool {
     NSString *version = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"];
     if ([version isEqualToString:@"101"]) { if (!recover(@"recover")) return 98; NSError *err = nil; NSString *text = [NSString stringWithContentsOfFile:[base() stringByAppendingPathComponent:@"config"] encoding:NSUTF8StringEncoding error:&err]; writeMarker(@"new-version",text ?: @"missing"); return 0; }
     NSApplication *app = [NSApplication sharedApplication];
     Driver *driver = [Driver new];
-    SPUUpdater *updater = [[SPUUpdater alloc] initWithHostBundle:NSBundle.mainBundle applicationBundle:NSBundle.mainBundle userDriver:driver delegate:nil];
+    Delegate *delegate = [Delegate new];
+    SPUUpdater *updater = [[SPUUpdater alloc] initWithHostBundle:NSBundle.mainBundle applicationBundle:NSBundle.mainBundle userDriver:driver delegate:delegate];
     NSError *error = nil;
     if (![updater startUpdater:&error]) { writeMarker(@"error",error.description); return 90; }
     [updater checkForUpdates];
