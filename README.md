@@ -11,7 +11,7 @@ macOS 27 / Apple Silicon 向けのメニューバー型キーリマッパー。S
 統合後にさらに削減できる範囲は [追加削減レポート](docs/further-minimization-ja.md) にあります。
 GUIのメモリ対策と検証範囲は [メモリ削減の実装記録](docs/memory-refactoring-2026-11-06-ja.md) にあります。
 
-## AIを用いた開発とセキュリティについて
+## AIを用いた開発とセキュリティ
 
 ReKey の独自コードは、全面的に生成AIを用いて作成しています。この開発方法と、現在は開発版であることをご理解のうえで利用してください。第三者のコード・ライブラリについては、[参考プロジェクトとサードパーティー](#参考プロジェクトとサードパーティー) に出典とライセンスを記載しています。
 
@@ -69,7 +69,9 @@ EventViewer の表示はパスワード欄や Secure Event Input、監視状態�
 5. 既存の Karabiner-Elements を停止してからリマップを再開する。ReKey は Karabiner の入力サービスを検出すると占有しない。
 6. 単純リマップを一つ設定し、EventViewer とテキスト欄で押下・解放を確認する。
 
-開発用出力は、承認・起動済みの `Karabiner-DriverKit-VirtualHIDDevice` サービスに接続します。単独ドライバの公式署名・公証済みパッケージ `Vendor/VirtualHID/dist/Karabiner-DriverKit-VirtualHIDDevice-8.6.0.pkg` を使用でき、Karabiner-Elements 本体は不要です。ドライバ拡張自体の版は1.8.0です。`Vendor/VirtualHID` は Git サブモジュールではなく、上流 `ac836ed8a974cd5182495251855cabdb762f50cb` のファイルをこのリポジトリで追跡しています。仮想キーボードの ready 通知を待って接続済みと表示します。ReKey は同リポジトリの公式 launchd plist を同梱し、SMAppService で接続用デーモンを登録します。共有サービスのため、ReKey の入力サービス解除・アンインストールではこの登録を解除しません。ReKey 固有の dext は未提供です。第三者の署名や provisioning profile を使用して再署名することはありません。
+開発用出力は、承認・起動済みの `Karabiner-DriverKit-VirtualHIDDevice` サービスに接続します。単独ドライバの公式署名・公証済みパッケージ `Vendor/VirtualHID/dist/Karabiner-DriverKit-VirtualHIDDevice-8.6.0.pkg` を使用でき、Karabiner-Elements 本体は不要です。ドライバ拡張自体のバージョンは1.8.0です。`Vendor/VirtualHID` は Git サブモジュールではなく、上流 `ac836ed8a974cd5182495251855cabdb762f50cb` のファイルをこのリポジトリで追跡しています。
+
+仮想キーボードの ready 通知を待って接続済みと表示します。ReKey は同リポジトリの公式 launchd plist を同梱し、SMAppService で接続用デーモンを登録します。共有サービスのため、ReKey の入力サービス解除・アンインストールではこの登録を解除しません。ReKey 固有の dext は未提供です。第三者の署名や provisioning profile を使用して再署名することはありません。
 
 旧版から更新する場合は、UI・Agent・Core を同時に更新して再起動した後、ReKey の両権限と ReKeyAgent の入力監視をシステム設定でオフにできます。設定画面は Core の入力監視と Agent が報告するアクセシビリティの状態を表示します。Agent が未許可・停止・応答切れの場合、EventViewer は入力表示を抑止します。通常のリマップには Agent のアクセシビリティは不要です。EventViewer の「アクセスを許可」から必要なときだけ要求できます。入力欄の AX 確認は EventViewer 表示中だけ行います。一度付与した OS の許可は自動解除されないため、不要ならシステム設定でオフにできます。通知の許可は `notify` アクションを実行するときに要求します。
 

@@ -36,7 +36,7 @@
 
 ## オフライン再現と既存試験
 
-調査用 `CoreValidation/stuck_key_probe.cpp` は（現在は `scripts/test-core.sh` でも実行する。本文の行番号は調査時点のもの） OS 入力やデバイスを操作せず、エンジンだけを呼ぶ。現在設定のコピーではなく、JIS キー1件だけの合成設定を使用した。
+調査用 `CoreValidation/stuck_key_probe.cpp` は OS 入力やデバイスを操作せず、エンジンだけを呼ぶ。現在は `scripts/test-core.sh` でも実行する。本文の行番号は調査時点のもの。現在設定のコピーではなく、JIS キー1件だけの合成設定を使用した。
 
 ```sh
 xcrun clang++ -std=c++23 -O2 -ICore \
