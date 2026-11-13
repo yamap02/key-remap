@@ -1,5 +1,10 @@
 import Foundation
+// Tests/Distribution compiles this file alone with swiftc, without ReKeyModel.
+#if canImport(ReKeyModel)
 import ReKeyModel
+#else
+private func L(_ key: String) -> String { key }
+#endif
 
 // Records intent before stopping anything so an interrupted recovery can be
 // retried by the next UI process. This does not alter the user's config file.
