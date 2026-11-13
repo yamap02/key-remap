@@ -103,6 +103,16 @@ scripts/build-pkg.sh
 
 実在する Team ID、製品 bundle ID、DriverKit entitlement と provisioning profile は未設定です。現在の `jp.example.rekey` は開発用です。署名済み pkg / 公証 / Homebrew Cask / Sparkle 更新を出荷する前に、[要件表](docs/requirements.md) の配布ゲートを満たす必要があります。
 
-## サードパーティー
+## ライセンス
 
-仮想 HID のクライアント・評価用ドライバ実装は [pqrs-org/Karabiner-DriverKit-VirtualHIDDevice](https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice) を使用します。ライセンスと依存ライブラリのライセンスは `Vendor/VirtualHID/LICENSE.md` および同リポジトリ内にあります。
+ReKey の独自部分は [Unlicense](LICENSE.md) で公開します。商用・非商用を問わず、利用・コピー・改変・再配布が可能です。ソフトウェアは無保証で提供します。第三者のコード・ライブラリ・その他の素材には、それぞれのライセンスが適用されます。
+
+## 参考プロジェクトとサードパーティー
+
+ReKey は [Karabiner-Elements](https://github.com/pqrs-org/Karabiner-Elements) を参考に開発した独立したプロジェクトです。Karabiner-Elements および pqrs.org の公式製品ではなく、提携・推奨を示すものではありません。Karabiner-Elements 本体は [Unlicense](https://github.com/pqrs-org/Karabiner-Elements/blob/main/LICENSE.md) で公開されていますが、その依存物には個別のライセンスがあります。
+
+仮想 HID のクライアント・評価用ドライバには、[pqrs-org/Karabiner-DriverKit-VirtualHIDDevice](https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice) の実装を使用しています。`Vendor/VirtualHID` に取り込んだ上流スナップショットは [`ac836ed8a974cd5182495251855cabdb762f50cb`](https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice/tree/ac836ed8a974cd5182495251855cabdb762f50cb) です。本体のライセンスは [Unlicense](Vendor/VirtualHID/LICENSE.md)、内包する依存物にはそれぞれのライセンスが適用されます。
+
+Sparkle、Asio、pqrs C++ ヘッダー、Microsoft GSL、nlohmann/json、nod、type_safe などの利用部品と通知文は [第三者ライセンス一覧](Resources/Licenses/README.md) を参照してください。ビルド時には ReKey のライセンスと第三者ライセンスをアプリの `Contents/Resources/Licenses/` に収録します。別途インストールする公式ドライバパッケージの通知文も確認してください。
+
+この記載は独自コード全体の類似性調査や、すべての依存物のライセンス監査が完了したことを示すものではありません。依存物の追加・更新時と公開前には、出典、適用ライセンス、必要な著作権表示・通知文を確認してください。
