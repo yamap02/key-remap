@@ -84,7 +84,10 @@ int main(){
         expect(e.process({4,true,100}),{},"chord first pending");expect(e.process({5,true,120}),{{41,true}},"chord matches");expect(e.process({4,false,130}),{},"chord suppress raw release");expect(e.process({5,false,140}),{{41,false}},"chord output release");
         e=engine(c);e.process({4,true,100});expect(e.tick(150),{{4,true}},"expired chord passthrough");expect(e.process({4,false,160}),{{4,false}},"expired release");
         e=engine(c);e.process({4,true,100});expect(e.process({4,false,120}),{{4,true},{4,false}},"short failed chord tap preserved");
-        e=engine(c);e.process({4,true,100});expect(e.process({5,true,150}),{{4,true}},"boundary chord member already emitted stays plain");expect(e.process({4,false,160}),{{4,false}},"boundary plain member is released");
+        e=engine(c);e.process({4,true,100});expect(e.process({5,true,150}),{{4,true}},"boundary chord member already emitted stays plain");expect(e.process({4,false,160}),{{5,true},{4,false}},"boundary plain member is released after the pending member, keeping physical order");
+        e=engine(c);e.process({4,true,100});expect(e.process({6,true,110}),{{4,true},{6,true}},"non-member down resolves pending chord first");
+        e=engine(c);e.process({6,true,90});e.process({4,true,100});expect(e.process({6,false,110}),{{4,true},{6,false}},"pending chord resolves before an earlier key is released");
+        e=engine(c);e.process({5,true,100});e.tick(150);expect(e.process({4,true,200}),{},"chord wait with an emitted member");expect(e.process({5,false,210}),{{4,true},{5,false}},"release of an emitted member resolves pending first");
     }
     {
         auto c=base();c["profiles"][0]["layers"]={{{"name","nav"},{"trigger",{{"key","spacebar"}}},{"mode","hold"},{"map",{{"h","left_arrow"}}}}};auto e=engine(c);
