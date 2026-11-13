@@ -5,15 +5,18 @@ source scripts/build-config.sh
 if [[ "$REKEY_RELEASE" == 1 && ( -z "${REKEY_INSTALLER_IDENTITY:-}" || -z "${REKEY_NOTARY_PROFILE:-}" ) ]]; then
   echo 'Release packages require Developer ID Installer and a notary keychain profile' >&2; exit 64
 fi
-if [[ "$REKEY_RELEASE" == 1 ]]; then
-  # Package exactly the app that was signed, notarized and stapled for the
-  # update archive; rebuilding here would silently create a different app.
+if [[ "$REKEY_RELEASE" == 1 || "$REKEY_DEVELOPMENT_DISTRIBUTION" == 1 ]]; then
+  # Package exactly the app prepared for the update archive (including any
+  # notarization/stapling in release mode); rebuilding here would silently create a different app.
   [[ -n "${REKEY_UPDATE_ARCHIVE:-}" ]] || { echo 'REKEY_UPDATE_ARCHIVE is required for a release package' >&2; exit 64; }
   /usr/bin/python3 scripts/verify-package-app.py build/ReKey.app
   /usr/bin/python3 scripts/verify-update-archive.py build/ReKey.app "$REKEY_UPDATE_ARCHIVE"
-  /usr/bin/python3 scripts/verify-release-signatures.py build/ReKey.app "$REKEY_TEAM_ID"
-  xcrun stapler validate build/ReKey.app
-  spctl --assess --type execute --verbose=2 build/ReKey.app
+  codesign --verify --deep --strict build/ReKey.app
+  if [[ "$REKEY_RELEASE" == 1 ]]; then
+    /usr/bin/python3 scripts/verify-release-signatures.py build/ReKey.app "$REKEY_TEAM_ID"
+    xcrun stapler validate build/ReKey.app
+    spctl --assess --type execute --verbose=2 build/ReKey.app
+  fi
 else
   scripts/build-app.sh
 fi
@@ -22,29 +25,35 @@ build_number="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' build/ReKey.
 package_filename="${1:-ReKey-${version}.pkg}"
 if [[ "$package_filename" == */* || "$package_filename" != *.pkg ]]; then echo "Pass a .pkg filename without directories" >&2; exit 64; fi
 final_output="build/$package_filename"
-if [[ "$REKEY_RELEASE" == 1 && ( -e "$final_output" || -L "$final_output" ) ]]; then
+if [[ ( "$REKEY_RELEASE" == 1 || "$REKEY_DEVELOPMENT_DISTRIBUTION" == 1 ) && ( -e "$final_output" || -L "$final_output" ) ]]; then
   echo 'Refusing to overwrite an existing release package' >&2; exit 64
 fi
 stage=$(mktemp -d "${TMPDIR:-/tmp}/rekey-package.XXXXXX")
 trap 'rm -rf "$stage"' EXIT
-if [[ "$REKEY_RELEASE" == 1 ]]; then package_output="$stage/$package_filename"; else package_output="$final_output"; fi
-if [[ "$REKEY_RELEASE" == 1 ]]; then
+if [[ "$REKEY_RELEASE" == 1 || "$REKEY_DEVELOPMENT_DISTRIBUTION" == 1 ]]; then package_output="$stage/$package_filename"; else package_output="$final_output"; fi
+if [[ "$REKEY_RELEASE" == 1 || "$REKEY_DEVELOPMENT_DISTRIBUTION" == 1 ]]; then
   # Check the actual update archive after extraction as well as its source;
   # zip metadata must preserve the code signature and stapled ticket.
   mkdir "$stage/update-archive"
   ditto -x -k "$REKEY_UPDATE_ARCHIVE" "$stage/update-archive"
   archived_app="$stage/update-archive/ReKey.app"
   /usr/bin/python3 scripts/verify-package-app.py "$archived_app"
-  /usr/bin/python3 scripts/verify-release-signatures.py "$archived_app" "$REKEY_TEAM_ID"
-  xcrun stapler validate "$archived_app"
-  spctl --assess --type execute --verbose=2 "$archived_app"
+  codesign --verify --deep --strict "$archived_app"
+  if [[ "$REKEY_RELEASE" == 1 ]]; then
+    /usr/bin/python3 scripts/verify-release-signatures.py "$archived_app" "$REKEY_TEAM_ID"
+    xcrun stapler validate "$archived_app"
+    spctl --assess --type execute --verbose=2 "$archived_app"
+  fi
 fi
 mkdir -p "$stage/root/Applications" "$stage/scripts"
 ditto --noextattr --noqtn --norsrc build/ReKey.app "$stage/root/Applications/ReKey.app"
-if [[ "$REKEY_RELEASE" == 1 ]]; then
+if [[ "$REKEY_RELEASE" == 1 || "$REKEY_DEVELOPMENT_DISTRIBUTION" == 1 ]]; then
   /usr/bin/python3 scripts/verify-package-app.py "$stage/root/Applications/ReKey.app"
-  /usr/bin/python3 scripts/verify-release-signatures.py "$stage/root/Applications/ReKey.app" "$REKEY_TEAM_ID"
-  xcrun stapler validate "$stage/root/Applications/ReKey.app"
+  codesign --verify --deep --strict "$stage/root/Applications/ReKey.app"
+  if [[ "$REKEY_RELEASE" == 1 ]]; then
+    /usr/bin/python3 scripts/verify-release-signatures.py "$stage/root/Applications/ReKey.app" "$REKEY_TEAM_ID"
+    xcrun stapler validate "$stage/root/Applications/ReKey.app"
+  fi
 fi
 /usr/bin/python3 - "$REKEY_PRODUCT_ID" "$stage/scripts/preinstall" <<'PYTHON'
 from pathlib import Path
@@ -90,10 +99,10 @@ if [[ -n "${REKEY_NOTARY_PROFILE:-}" ]]; then
     spctl --assess --type install --verbose=2 "$package_output"
   fi
 else
-  echo "Development package: not notarized. Distribution requires Developer ID signing and notarization."
+  echo "Development package: unsigned installer, ad-hoc app, not notarized; macOS requires explicit opening permission."
 fi
-if [[ "$REKEY_RELEASE" == 1 ]]; then
+if [[ "$REKEY_RELEASE" == 1 || "$REKEY_DEVELOPMENT_DISTRIBUTION" == 1 ]]; then
   mv -n "$package_output" "$final_output"
   [[ ! -e "$package_output" && -f "$final_output" ]] || { echo 'Could not place release package safely' >&2; exit 1; }
-  echo "Release package verified: $final_output"
+  echo "Distribution package verified: $final_output"
 fi

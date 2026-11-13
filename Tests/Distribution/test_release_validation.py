@@ -111,6 +111,24 @@ class ReleaseValidation(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertFalse(NOTARY.accepted(value))
 
+    def test_unnotarized_distribution_is_explicit_and_validated(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith('REKEY_')}
+        env.update(REKEY_RELEASE='0', REKEY_DEVELOPMENT_DISTRIBUTION='1',
+                   REKEY_PRODUCT_ID='io.github.yamap02.ReKey', REKEY_VERSION='0.1.0',
+                   REKEY_BUILD_NUMBER='1', REKEY_FEED_URL='https://github.com/yamap02/key-remap/releases/latest/download/appcast.xml',
+                   REKEY_ED_PUBLIC_KEY=base64.b64encode(bytes(32)).decode())
+        def check(changes):
+            return subprocess.run(['/bin/zsh', '-c', 'source scripts/build-config.sh'],
+                                  cwd=ROOT, env=dict(env, **changes), capture_output=True).returncode
+        self.assertEqual(check({}), 0)
+        for changes in ({'REKEY_RELEASE': '1'}, {'REKEY_TEAM_ID': TEAM},
+                        {'REKEY_INSTALLER_IDENTITY': 'certificate'}, {'REKEY_NOTARY_PROFILE': 'profile'},
+                        {'REKEY_SIGNING_IDENTITY': 'certificate'}, {'REKEY_DEVELOPMENT_DISTRIBUTION': 'yes'},
+                        {'REKEY_ED_PUBLIC_KEY': ''}, {'REKEY_FEED_URL': 'http://github.com/feed'},
+                        {'REKEY_PRODUCT_ID': 'jp.example.rekey'}):
+            with self.subTest(changes=changes):
+                self.assertNotEqual(check(changes), 0)
+
     def test_release_configuration_fails_closed(self):
         env = {k: v for k, v in os.environ.items() if not k.startswith('REKEY_')}
         env.update(REKEY_RELEASE='1', REKEY_PRODUCT_ID='org.vendor.rekey', REKEY_TEAM_ID=TEAM,

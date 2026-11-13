@@ -34,20 +34,28 @@ def release_list():
     return [release for page in pages for release in page]
 
 
-def configure(version, build):
+def configure(version, build, development=False):
     if not re.fullmatch(r'[0-9]+\.[0-9]+(?:\.[0-9]+)?', version):
         raise ValueError('Version must be numeric, e.g. 0.1.0')
     if not re.fullmatch(r'[1-9][0-9]*', build):
         raise ValueError('Build must be a positive integer')
-    for name in ('REKEY_TEAM_ID', 'REKEY_SIGNING_IDENTITY', 'REKEY_INSTALLER_IDENTITY', 'REKEY_NOTARY_PROFILE'):
-        if not os.environ.get(name):
-            raise ValueError(f'{name} is required; see docs/github-releases-ja.md')
+    credentials = ('REKEY_TEAM_ID', 'REKEY_SIGNING_IDENTITY', 'REKEY_INSTALLER_IDENTITY', 'REKEY_NOTARY_PROFILE')
+    if not development:
+        for name in credentials:
+            if not os.environ.get(name):
+                raise ValueError(f'{name} is required; see docs/github-releases-ja.md')
+    else:
+        for name in credentials:
+            os.environ.pop(name, None)
     if not (TOOLS / 'generate_keys').is_file():
         raise ValueError('Run swift package resolve first (Sparkle 2.9.6 tools are required)')
     key = run(TOOLS / 'generate_keys', '--account', ACCOUNT, '-p', capture=True).strip()
-    if os.environ.get('REKEY_ED_PUBLIC_KEY', key) != key:
+    expected_key = (ROOT / 'Resources/sparkle-public-key.txt').read_text().strip()
+    if key != expected_key or os.environ.get('REKEY_ED_PUBLIC_KEY', key) != key:
         raise ValueError('Configured public key differs from the release Keychain key')
-    os.environ.update(REKEY_RELEASE='1', REKEY_PRODUCT_ID=PRODUCT, REKEY_FEED_URL=FEED,
+    os.environ.update(REKEY_RELEASE='0' if development else '1',
+                      REKEY_DEVELOPMENT_DISTRIBUTION='1' if development else '0',
+                      REKEY_PRODUCT_ID=PRODUCT, REKEY_FEED_URL=FEED,
                       REKEY_ED_PUBLIC_KEY=key, REKEY_VERSION=version, REKEY_BUILD_NUMBER=build)
     run('/bin/zsh', '-c', 'source scripts/build-config.sh')
     repo = json.loads(run('gh', 'repo', 'view', REPO, '--json', 'visibility', capture=True))
@@ -105,16 +113,7 @@ def previous_feed(folder, releases):
     return previous
 
 
-def prepare(version, build, folder):
-    commit = require_tag(version)
-    releases = release_list()
-    if any(r['tag_name'] == f'v{version}' or r['draft'] for r in releases):
-        raise ValueError('Release/tag already used or another draft exists; resolve it first')
-    folder.mkdir(parents=True, exist_ok=False)
-    previous = previous_feed(folder, releases)
-    if previous:
-        run(sys.executable, ROOT / 'scripts/check-appcast-version.py', previous, build)
-    run(ROOT / 'scripts/build-app.sh')
+def notarize_app():
     with tempfile.TemporaryDirectory(prefix='rekey-notary-') as tmp:
         archive = Path(tmp) / 'notary.zip'
         run('ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', ROOT / 'build/ReKey.app', archive)
@@ -125,6 +124,21 @@ def prepare(version, build, folder):
     run('xcrun', 'stapler', 'staple', ROOT / 'build/ReKey.app')
     run('xcrun', 'stapler', 'validate', ROOT / 'build/ReKey.app')
     run('spctl', '--assess', '--type', 'execute', '--verbose=2', ROOT / 'build/ReKey.app')
+
+
+def prepare(version, build, folder, development=False):
+    commit = require_tag(version)
+    releases = release_list()
+    if any(r['tag_name'] == f'v{version}' or r['draft'] for r in releases):
+        raise ValueError('Release/tag already used or another draft exists; resolve it first')
+    folder.mkdir(parents=True, exist_ok=False)
+    previous = previous_feed(folder, releases)
+    if previous:
+        run(sys.executable, ROOT / 'scripts/check-appcast-version.py', previous, build)
+    run(ROOT / 'scripts/build-app.sh')
+    run('codesign', '--verify', '--deep', '--strict', ROOT / 'build/ReKey.app')
+    if not development:
+        notarize_app()
     assets = folder / 'assets'
     assets.mkdir()
     if previous:
@@ -140,25 +154,34 @@ def prepare(version, build, folder):
     run(ROOT / 'scripts/build-pkg.sh', package)
     shutil.copy2(ROOT / 'build' / package, assets / package)
     names = [archive.name, package, 'appcast.xml']
-    state = dict(version=version, build=build, commit=commit,
+    state = dict(version=version, build=build, commit=commit, development=development,
                  public_key=os.environ['REKEY_ED_PUBLIC_KEY'],
                  previous=digest(previous) if previous else None,
                  assets={name: digest(assets / name) for name in names})
     # Save recovery information before the remote mutation. Never overwrite assets.
     (folder / 'release.json').write_text(json.dumps(state, indent=2) + '\n')
     notes = folder / 'release-notes.md'
-    notes.write_text((ROOT / 'docs/release-notes-template.md').read_text().replace('<版>', version))
+    contents = (ROOT / 'docs/release-notes-template.md').read_text().replace('<版>', version).replace('/blob/main/', f'/blob/v{version}/')
+    if development:
+        contents = ('**未公証の開発版です。Apple Developer ID による署名はなく、app は ad-hoc 署名です。**\n'
+                    '初回起動・インストール時は macOS のシステム設定 → プライバシーとセキュリティ → '
+                    '「このまま開く」で許可が必要です。Sparkle の feed と更新 zip は専用の EdDSA 鍵で署名しています。\n\n' + contents)
+    contents += '\n### SHA-256\n\n```text\n' + ''.join(
+        f'{checksum}  {name}\n' for name, checksum in state['assets'].items()) + '```\n'
+    notes.write_text(contents)
     run('gh', 'release', 'create', f'v{version}', '--repo', REPO, '--draft', '--verify-tag',
-        '--title', f'ReKey {version}', '--notes-file', notes,
+        '--title', f'ReKey {version}' + ('（未公証の開発版）' if development else ''), '--notes-file', notes,
         *(assets / name for name in names))
     verify_downloads(folder, state, public=False)
     print(f'Draft verified: https://github.com/{REPO}/releases/tag/v{version}')
 
 
-def load_state(folder, version, build):
+def load_state(folder, version, build, development=False):
     state = json.loads((folder / 'release.json').read_text())
     if (state['version'], state['build'], state['public_key']) != (version, build, os.environ['REKEY_ED_PUBLIC_KEY']):
         raise ValueError('Release state does not match version, build, or signing key')
+    if state.get('development', False) != development:
+        raise ValueError('Use the same distribution mode as prepare')
     expected = {f'ReKey-{version}.zip', f'ReKey-{version}.pkg', 'appcast.xml'}
     if set(state['assets']) != expected:
         raise ValueError('Release state has unexpected assets')
@@ -209,13 +232,15 @@ def main():
     parser.add_argument('action', choices=('prepare', 'publish', 'verify'))
     parser.add_argument('version', help='display version without v')
     parser.add_argument('build', help='strictly increasing integer')
+    parser.add_argument('--unnotarized-development', action='store_true',
+                        help='explicitly distribute an ad-hoc app and unsigned pkg without Apple notarization')
     args = parser.parse_args()
-    configure(args.version, args.build)
+    configure(args.version, args.build, args.unnotarized_development)
     folder = ROOT / 'build/releases' / f'v{args.version}'
     if args.action == 'prepare':
-        prepare(args.version, args.build, folder)
+        prepare(args.version, args.build, folder, args.unnotarized_development)
     else:
-        state = load_state(folder, args.version, args.build)
+        state = load_state(folder, args.version, args.build, args.unnotarized_development)
         if args.action == 'publish':
             publish(folder, state)
         else:
