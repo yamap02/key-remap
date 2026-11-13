@@ -160,6 +160,10 @@ int main(){
         c["profiles"].push_back({{"name","Other"},{"selected",false},{"simple",JSON::array({{{"from",{{"key","nokey"}}},{"to",JSON::array({{{"key","a"}}})}}})}});check(rejects(c.dump()),"validation compiles unselected profiles");
         check(rejects(std::string(max_config_bytes+1,' ')),"validation enforces the size limit");
     }
+    {
+        auto c=base();auto m=basic("a","escape");m["from"]={{"simultaneous",JSON::array({{{"key","a"}},{{"key","a"}}})}};c["profiles"][0]["rules"]={rule(m)};bool rejected=false;
+        try{(void)Program::compile(c,{});}catch(const std::runtime_error&){rejected=true;}check(rejected,"duplicate simultaneous key rejected");
+    }
     // Benchmark only the transform; physical-to-virtual latency is a separate hardware test.
     auto c=base();for(int i=0;i<200;++i)c["profiles"][0]["rules"].push_back(rule(basic(i==199?"a":"b","c")));auto e=engine(c);std::vector<double> us;us.reserve(10000);
     for(int i=0;i<10000;++i){auto start=std::chrono::steady_clock::now();measure_allocations=true;auto o=e.process({4,(i%2)==0,uint64_t(i)});measure_allocations=false;auto end=std::chrono::steady_clock::now();check(o.size==1,"benchmark output");us.push_back(std::chrono::duration<double,std::micro>(end-start).count());}
