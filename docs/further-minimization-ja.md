@@ -72,7 +72,7 @@ ReKey 固有のプロセスは3つで、うち root は1つ。キー入力がな
 
 | 箇所 | 現状 | 置き換え先 |
 | --- | --- | --- |
-| Core の `tick()` | 5 ms ごと（200回/秒）。毎秒、全プロセスを root で走査（`proc_listallpids`）して Karabiner を検出し、設定ファイルも `stat` している | 長押しなどの期限があるときだけタイマーを張る。設定の変化はすでにある vnode 監視に任せる。Karabiner の検出は数秒間隔か、起動通知に変える |
+| Core の `tick()` | 5 ms ごと（200回/秒）。毎秒、全プロセスを root で走査（`proc_listallpids`）して Karabiner を検出し、設定ファイルも `stat` している | 長押しなどの期限があるときだけタイマーを張る。設定の変化はすでにある vnode 監視に任せる。Karabiner の検出は数秒間隔か、起動通知に変える（2026-11-14: Karabiner の検出は 5 秒間隔に変更。解析に失敗した設定はファイルが変わるまで再解析しない） |
 | Agent の `tick()` | 100 ms ごと。最前面アプリ・入力ソース・デバイス・アクションをすべてポーリングしている | `NSWorkspace.didActivateApplicationNotification`、`kTISNotifySelectedKeyboardInputSourceChanged`、IOHIDManager の接続通知、Core から Agent へ XPC で通知を送る方式に変える |
 | UI | 3秒ごとに状態を確認し、デバイスを列挙している | デバイス一覧は Core の `status` から受け取り、UI 側での HID 列挙をやめる |
 
@@ -133,7 +133,7 @@ Agent が必要なのは次のどれかを使っているときに限られる�
 
 ## 根拠
 
-- `Core/core.mm`: 5 ms タイマー、毎秒の `karabiner()` 走査と `load()`、`Listener` の OR 条件、全メソッドの公開
+- `Core/core.mm`: 5 ms タイマー、毎秒の `karabiner()` 走査（現在は 5 秒ごと）と `load()`、`Listener` の OR 条件、全メソッドの公開
 - `Sources/ReKeyAgent/main.swift`: 100 ms タイマー、⌃⌥⌘P の登録、`AXIsProcessTrusted`、`shell_command` の実行
 - `Sources/ReKeyApp/AppState.swift`: 3秒ポーリング、`refreshDevices()`、vhid の移行処理
 - `scripts/build-app.sh`: `rekey-bench` と vhid plist の同梱、Agent の Info.plist の流用

@@ -6,7 +6,7 @@ unset REKEY_SIGNING_IDENTITY REKEY_TEAM_ID REKEY_INSTALLER_IDENTITY REKEY_NOTARY
 unset REKEY_PRODUCT_ID REKEY_FEED_URL REKEY_ED_PUBLIC_KEY
 export REKEY_RELEASE=0
 [[ -x build/sparkle-tools/bin/generate_appcast ]] || { echo "Install Sparkle 2.9.6 release tools in build/sparkle-tools first" >&2; exit 1; }
-work=$(mktemp -d /tmp/rekey-sparkle-test.XXXXXX)
+work=$(mktemp -d "${TMPDIR:-/tmp}/rekey-sparkle-test.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 umask 077
 openssl genpkey -algorithm ED25519 -out "$work/key.pem" 2>/dev/null

@@ -128,7 +128,7 @@ XPC の権限範囲にも改善余地がある。現 Core は UI と Agent の�
 ## 主なローカル根拠
 
 - `Core/core.mm`: 入力占有、5 ms tick、セキュア入力時の表示抑止、UI 生存期限、XPC 接続認証。
-- `Core/vhid.cpp` / `Core/Transport.hpp`: root 専用通信、レポート生成、Core 切断時のキー解放。
+- `Core/vhid.cpp` / `Core/Transport.hpp`（評価当時。その後 rekey-vhid は Core に統合され、両ファイルは削除済み。現在は `Core/VirtualHIDOutput.hpp` / `Core/OutputQueue.hpp`）: root 専用通信、レポート生成、Core 切断時のキー解放。
 - `Sources/ReKeyAgent/main.swift`: 100 ms tick、AX 判定、自動プロファイル、ホットキー、ユーザーアクション。
 - `Sources/ReKeyIPC/FocusPrivacy.swift` / `Sources/ReKeyApp/RuntimeClient.swift`: フォーカス秘匿条件、EventViewer の許可条件。
 - `Sources/ReKeyApp/ReKeyApp.swift` / `AppState.swift` / `Resources/jp.example.rekey.*.plist`: UI 終了、サービス登録、常駐設定。

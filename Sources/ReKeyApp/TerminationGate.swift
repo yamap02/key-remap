@@ -4,6 +4,7 @@ import AppKit
     static var updateServiceOperationInProgress = false
     static var requiresPendingVerification = false
     static var verifyPendingUpdate: (@MainActor () -> Bool)?
+    static var willTerminate: (@MainActor () -> Void)?
 }
 
 @MainActor final class ReKeyApplicationDelegate: NSObject, NSApplicationDelegate {
@@ -16,4 +17,6 @@ import AppKit
         }
         return .terminateNow
     }
+    // Runs even when the settings window has been closed.
+    func applicationWillTerminate(_ notification: Notification) { TerminationGate.willTerminate?() }
 }

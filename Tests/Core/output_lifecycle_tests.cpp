@@ -2,7 +2,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <iostream>
-#include <stdexcept>
 
 int main() {
     // Production's root-only daemon must remain inaccessible to this test.

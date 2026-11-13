@@ -3,7 +3,6 @@
 #include <iostream>
 #include <cstdlib>
 #include <chrono>
-#include <numeric>
 using namespace rekey;
 bool measure_allocations=false;size_t allocations=0;
 void* operator new(size_t size){if(measure_allocations)++allocations;if(auto p=std::malloc(size))return p;throw std::bad_alloc();}
@@ -85,6 +84,7 @@ int main(){
         expect(e.process({4,true,100}),{},"chord first pending");expect(e.process({5,true,120}),{{41,true}},"chord matches");expect(e.process({4,false,130}),{},"chord suppress raw release");expect(e.process({5,false,140}),{{41,false}},"chord output release");
         e=engine(c);e.process({4,true,100});expect(e.tick(150),{{4,true}},"expired chord passthrough");expect(e.process({4,false,160}),{{4,false}},"expired release");
         e=engine(c);e.process({4,true,100});expect(e.process({4,false,120}),{{4,true},{4,false}},"short failed chord tap preserved");
+        e=engine(c);e.process({4,true,100});expect(e.process({5,true,150}),{{4,true}},"boundary chord member already emitted stays plain");expect(e.process({4,false,160}),{{4,false}},"boundary plain member is released");
     }
     {
         auto c=base();c["profiles"][0]["layers"]={{{"name","nav"},{"trigger",{{"key","spacebar"}}},{"mode","hold"},{"map",{{"h","left_arrow"}}}}};auto e=engine(c);

@@ -45,6 +45,8 @@ struct DevicesView: View {
 struct ProfilesView: View {
     @ObservedObject var state: AppState
     @State private var deleting: Profile?
+    /// Keeps blank lines while typing; only non-empty lines are stored as patterns.
+    @State private var patterns = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("仕事、アプリ、キーボードに合わせて切り替える。").foregroundStyle(.secondary)
@@ -55,25 +57,36 @@ struct ProfilesView: View {
                         TextField("プロファイル名", text: Binding(get: { p.name }, set: { state.config.profiles[i].name = $0; state.changed() })).textFieldStyle(.plain)
                         Spacer()
                         Text("\(p.simple.count) リマップ · \(p.rules.count) ルール").font(.caption).foregroundStyle(.secondary)
-                        Button("複製") { var copy = p; copy.id = UUID().uuidString; copy.name += " のコピー"; copy.selected = false; state.config.profiles.append(copy); state.changed() }
+                        Button("複製") { var copy = p; copy.id = UUID().uuidString; copy.name = String(format: L("%@ のコピー"), p.name); copy.selected = false; if copy.shortcut != nil { copy.shortcut = state.config.unusedShortcut() }; state.config.profiles.append(copy); state.changed() }
                         Button(role: .destructive) { deleting = p } label: { Image(systemName: "trash") }.disabled(state.config.profiles.count == 1)
                     }.padding(.vertical, 10)
                 }
             }.listStyle(.inset).frame(minHeight: 140, maxHeight: 260)
             HStack {
-                Button("プロファイルを追加", systemImage: "plus") { var p = Profile(name: "新しいプロファイル"); p.selected = false; state.config.profiles.append(p); state.changed() }
+                Button("プロファイルを追加", systemImage: "plus") { var p = Profile(name: L("新しいプロファイル")); p.selected = false; state.config.profiles.append(p); state.changed() }
                 Spacer(); Button("インポート…", systemImage: "square.and.arrow.down") { state.importFile() }; Button("書き出す…", systemImage: "square.and.arrow.up") { state.exportFile(profileOnly: true) }
             }
             GroupBox("キーボードショートカット · \(state.profile.name)") {
                 HStack {
-                    Toggle("⌃⌥⌘", isOn: Binding(get: { state.profile.shortcut != nil }, set: { state.config.profiles[state.profileIndex].shortcut = $0 ? .init() : nil; state.changed() }))
+                    Toggle("⌃⌥⌘", isOn: Binding(get: { state.profile.shortcut != nil }, set: { state.config.profiles[state.profileIndex].shortcut = $0 ? state.config.unusedShortcut() : nil; state.changed() }))
                     if let shortcut = state.profile.shortcut { KeyPicker(title: "ショートカットのキー", selection: Binding(get: { shortcut.key }, set: { state.config.profiles[state.profileIndex].shortcut?.key = $0; state.changed() })) }
                 }.padding(8)
+                if state.config.shortcutConflicts(profile: state.profile.id) {
+                    Label("このショートカットは他のプロファイルまたは一時停止（⌃⌥⌘P）と重複しているため使用できません。", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).padding([.horizontal, .bottom], 8)
+                }
             }
             GroupBox("自動切替 · \(state.profile.name)") {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("最前面アプリの bundle ID（正規表現、1 行ずつ）").font(.caption).foregroundStyle(.secondary)
-                    TextEditor(text: Binding(get: { state.profile.auto_select.frontmost_app.joined(separator: "\n") }, set: { state.config.profiles[state.profileIndex].auto_select.frontmost_app = $0.split(separator: "\n").map(String.init); state.changed() })).font(.system(.body, design: .monospaced)).frame(height: 66)
+                    TextEditor(text: $patterns).font(.system(.body, design: .monospaced)).frame(height: 66)
+                        .onAppear { patterns = state.profile.auto_select.frontmost_app.joined(separator: "\n") }
+                        .onChange(of: patterns) { _, text in
+                            let lines = text.split(separator: "\n").map(String.init)
+                            if lines != state.profile.auto_select.frontmost_app { state.config.profiles[state.profileIndex].auto_select.frontmost_app = lines; state.changed() }
+                        }
+                        .onChange(of: state.profile.auto_select.frontmost_app) { _, stored in
+                            if patterns.split(separator: "\n").map(String.init) != stored { patterns = stored.joined(separator: "\n") }
+                        }
                     Text("例: ^com\\.apple\\.Terminal$").font(.caption).foregroundStyle(.secondary)
                     Text("現在のアプリ: \(state.frontmostApp)").font(.caption).textSelection(.enabled)
                     Divider()
@@ -96,9 +109,9 @@ struct PermissionsView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("入力を扱うために、必要なアクセスを確認します。").foregroundStyle(.secondary)
                 permission("入力監視", icon: "waveform.path", status: state.inputMonitoringReady ? "許可済み" : "未許可", ready: state.inputMonitoringReady, description: "rekey-core のみ許可してください。場所は /Applications/ReKey.app/Contents/Library/HelperTools/rekey-core です。Finder で選択された rekey-core をシステム設定の入力監視リストに追加し、オンにしてください。許可後に「入力サービスを再起動」を押してください。") { state.requestInputMonitoring() }
-                permission("アクセシビリティ", icon: "accessibility", status: state.accessibility ? "許可済み" : "EventViewer 使用時のみ必要", ready: state.accessibility, description: "通常のリマップには不要です。EventViewer のパスワード欄確認にのみ使用します。必要な場合は ReKeyAgent のみ許可してください。ReKey の許可は不要です。") { state.requestAccessibility(); state.openPrivacy("Privacy_Accessibility") }
+                permission("アクセシビリティ", icon: "accessibility", status: state.accessibility ? "許可済み" : "EventViewer 使用時のみ必要", ready: state.accessibility, description: "通常のリマップには不要です。EventViewer のパスワード欄確認にのみ使用します。必要な場合は ReKeyAgent のみ許可してください。ReKey の許可は不要です。") { state.requestAgentPermissions(); state.openPrivacy("Privacy_Accessibility") }
                 permission("仮想 HID ドライバ", icon: "puzzlepiece.extension", status: state.driverActive ? "接続済み（評価用）" : "未接続", ready: state.driverActive, description: "開発版は Karabiner の公開ドライバを利用します。「確認する」で接続用デーモンも登録します。バックグラウンド項目とドライバ拡張を許可してください。") { state.setupDriver() }
-                permission("入力サービス", icon: "gearshape.2", status: state.daemonStatus, ready: state.daemonStatus == "稼働中", description: "rekey-core が入力の取得・変換・仮想 HID 出力を行います。root サービスは1つです。ReKeyAgent はユーザー権限で動作します。") { if let u = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") { NSWorkspace.shared.open(u) } }
+                permission("入力サービス", icon: "gearshape.2", status: state.daemonStatus.rawValue, ready: state.daemonStatus == .running, description: "rekey-core が入力の取得・変換・仮想 HID 出力を行います。root サービスは1つです。ReKeyAgent はユーザー権限で動作します。") { if let u = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") { NSWorkspace.shared.open(u) } }
                 HStack { Button("入力サービスを登録") { state.registerServices() }; Button("登録を解除") { state.unregisterServices() }; Button("入力サービスを再起動") { state.restartServices() } }.disabled(state.recoveringServices || state.updatePrepared || state.serviceOperationInProgress)
                 if let runtimeError = state.runtime.status?.error, !runtimeError.isEmpty { Text(runtimeError).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
                 GroupBox {
@@ -124,12 +137,12 @@ struct GeneralView: View {
             Section("言語") { Picker("言語", selection: $language) { Text("日本語").tag("ja"); Text("English").tag("en"); Text("システム設定に従う").tag("system") } }
             Section("起動と終了") {
                 Toggle("ログイン時に ReKey を起動", isOn: Binding(get: { SMAppService.mainApp.status == .enabled }, set: { state.setLogin($0) }))
-                Toggle("終了時にリマップを無効化", isOn: $state.config.global.disable_on_quit).onChange(of: state.config.global.disable_on_quit) { state.changed() }
+                Toggle("終了時にリマップを無効化", isOn: global(\.disable_on_quit))
             }
             Section("判定時間") {
-                Stepper("単押し: \(state.config.global.thresholds_ms.alone) ms", value: $state.config.global.thresholds_ms.alone, in: 1...5000, step: 10).onChange(of: state.config.global.thresholds_ms.alone) { state.changed() }
-                Stepper("長押し: \(state.config.global.thresholds_ms.held_down) ms", value: $state.config.global.thresholds_ms.held_down, in: 1...5000, step: 10).onChange(of: state.config.global.thresholds_ms.held_down) { state.changed() }
-                Stepper("同時押し: \(state.config.global.thresholds_ms.simultaneous) ms", value: $state.config.global.thresholds_ms.simultaneous, in: 1...500, step: 5).onChange(of: state.config.global.thresholds_ms.simultaneous) { state.changed() }
+                Stepper("単押し: \(state.config.global.thresholds_ms.alone) ms", value: global(\.thresholds_ms.alone), in: 1...5000, step: 10)
+                Stepper("長押し: \(state.config.global.thresholds_ms.held_down) ms", value: global(\.thresholds_ms.held_down), in: 1...5000, step: 10)
+                Stepper("同時押し: \(state.config.global.thresholds_ms.simultaneous) ms", value: global(\.thresholds_ms.simultaneous), in: 1...500, step: 5)
             }
             Section("設定ファイル") {
                 LabeledContent("保存先", value: "~/Library/Application Support/ReKey/rekey.json").font(.callout)
@@ -137,8 +150,7 @@ struct GeneralView: View {
                 HStack { Button("Finder で表示") { state.revealConfig() }; Button("再読込") { state.reload(reloadEngine: true) }; Button("すべて書き出す…") { state.exportFile() } }
             }
             Section("アップデート") {
-                Toggle("更新を自動的に確認", isOn: $state.config.global.check_for_updates)
-                    .onChange(of: state.config.global.check_for_updates) { state.updates.setAutomaticChecks(state.config.global.check_for_updates); state.changed() }
+                Toggle("更新を自動的に確認", isOn: Binding(get: { state.config.global.check_for_updates }, set: { state.config.global.check_for_updates = $0; state.updates.setAutomaticChecks($0); state.changed() }))
                     .disabled(!state.updates.available)
                 Button("今すぐ更新を確認") { state.updates.checkNow() }.disabled(!state.updates.available)
                 Text(L(state.updates.startupError != nil ? "アップデート機能を開始できませんでした。" : state.updates.available ? "更新の確認時に配信サーバーへ接続します。インストール時に管理者認証を求められる場合があります。" : "このビルドには更新配信先と公開鍵が設定されていません。"))
@@ -149,10 +161,15 @@ struct GeneralView: View {
             }
         }.formStyle(.grouped)
     }
+    /// Saves only user edits; onChange would also fire after an external reload.
+    func global<T>(_ path: WritableKeyPath<GlobalSettings, T>) -> Binding<T> {
+        Binding(get: { state.config.global[keyPath: path] }, set: { state.config.global[keyPath: path] = $0; state.changed() })
+    }
 }
 struct EventViewer: View {
     @ObservedObject var state: AppState
     @ObservedObject private var log: EventLog
+    @Environment(\.openWindow) private var openWindow
     @State private var paused = false
     init(state: AppState) {
         self.state = state
@@ -167,7 +184,7 @@ struct EventViewer: View {
                 Button("クリア", systemImage: "trash") { state.runtime.eventLog.clear() }
             }
             if !state.eventViewerReady {
-                ContentUnavailableView { Label(L(state.runtime.status == nil ? "入力サービスへの接続待ち" : state.inputMonitoringReady ? "ReKeyAgent の権限と接続を確認してください" : "入力監視の許可が必要です"), systemImage: "waveform.path") } description: { Text("通常のリマップにはアクセシビリティは不要です。EventViewer では ReKeyAgent による入力欄の安全確認が必要です。") } actions: { Button("EventViewer のアクセスを許可") { state.requestAccessibility(); state.openPrivacy("Privacy_Accessibility") }; Button("権限を確認") { state.page = .permissions; NSApp.windows.first(where: { $0.title == "ReKey" })?.makeKeyAndOrderFront(nil) } }
+                ContentUnavailableView { Label(L(state.runtime.status == nil ? "入力サービスへの接続待ち" : state.inputMonitoringReady ? "ReKeyAgent の権限と接続を確認してください" : "入力監視の許可が必要です"), systemImage: "waveform.path") } description: { Text("通常のリマップにはアクセシビリティは不要です。EventViewer では ReKeyAgent による入力欄の安全確認が必要です。") } actions: { Button("EventViewer のアクセスを許可") { state.requestAgentPermissions(); state.openPrivacy("Privacy_Accessibility") }; Button("権限を確認") { state.page = .permissions; openWindow(id: "settings"); NSApp.activate(ignoringOtherApps: true) } }
             } else {
                 Table(log.events) {
                     TableColumn("時刻") { e in Text(String(format: "%.3f", Double(e.time_ns)/1_000_000_000)).monospacedDigit() }.width(90)

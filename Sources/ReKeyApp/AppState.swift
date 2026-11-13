@@ -30,10 +30,18 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
 }
 
+/// The raw value is the localization key shown in the permissions view.
+enum DaemonStatus: String {
+    case running = "稼働中", paused = "一時停止中", conflict = "Karabiner と競合", waiting = "接続済み・入力待ち", disconnected = "未接続"
+}
+
 // Publish UI values explicitly. Transport/task bookkeeping must never take part
 // in SwiftUI Observation tracking in this long-lived menu bar process.
 @MainActor final class AppState: ObservableObject {
-    @Published var config = Configuration()
+    @Published var config = Configuration() {
+        // Another profile may have no settings for the selected keyboard; show the scope edits really go to.
+        didSet { if selectedDevice != "all" && deviceSettingsIndex() == nil { selectedDevice = "all" } }
+    }
     @Published var page: SettingsPage? = .simple
     @Published var devices: [KeyboardDevice] = []
     @Published var selectedDevice = "all"
@@ -61,7 +69,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     let runtime: RuntimeClient
     private(set) var updates: UpdateController!
     private var runtimeChanges: AnyCancellable?
-    var daemonStatus: String { runtime.status.map { $0.seized_devices > 0 && !$0.paused && !$0.conflict ? "稼働中" : $0.paused ? "一時停止中" : $0.conflict ? "Karabiner と競合" : "接続済み・入力待ち" } ?? "未接続" }
+    var daemonStatus: DaemonStatus { runtime.status.map { $0.seized_devices > 0 && !$0.paused && !$0.conflict ? .running : $0.paused ? .paused : $0.conflict ? .conflict : .waiting } ?? .disconnected }
     @Published var importResult: ImportResult?
     @Published var showImportReview = false
     @Published var showWelcome = false
@@ -71,15 +79,15 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     private var saving: Task<Void, Never>?
     private var polling: Task<Void, Never>?
     private var lastData: Data?
+    private var lastStamp: ConfigurationStore.FileStamp?
     private var dirty = false
     private var resumeAfterSave = false
     private let store: ConfigurationStore
     private var hid: IOHIDManager?
     var profileIndex: Int { config.profiles.firstIndex(where: \.selected) ?? 0 }
     var profile: Profile { config.profiles[profileIndex] }
-    var scopeLabel: String { selectedDevice == "all" ? "すべてのキーボード" : devices.first(where: { $0.id == selectedDevice })?.name ?? selectedDevice }
     var isPaused: Bool { config.global.paused || (runtime.status?.paused ?? false) }
-    var operational: Bool { daemonStatus == "稼働中" && driverActive && !config.global.paused }
+    var operational: Bool { daemonStatus == .running && driverActive && !config.global.paused }
     var statusTitle: String { recoveringServices || updatePrepared ? "更新処理中" : isPaused ? "一時停止中" : operational ? "リマップ有効" : "セットアップが必要です" }
     var statusColor: Color { recoveringServices || updatePrepared ? .orange : isPaused ? .secondary : operational ? .green : .orange }
     init(store: ConfigurationStore = ConfigurationStore(), runtime: RuntimeClient = RuntimeClient(), startMonitoring: Bool = true,
@@ -104,12 +112,16 @@ enum SettingsPage: String, CaseIterable, Identifiable {
             pendingInstallFailed: { [weak self] error in
                 self?.updatePrepared = true
                 self?.unsafePendingUpdate = true
-                self?.updateWarning = "保留中の更新を安全に続行できません。「更新を確認」で更新をキャンセルしてください: \(error.localizedDescription)"
+                self?.updateWarning = String(format: L("保留中の更新を安全に続行できません。「更新を確認」で更新をキャンセルしてください: %@"), error.localizedDescription)
             },
             aborted: { [weak self] error in self?.handleUpdateFailure(error, preparation: false) })
         TerminationGate.verifyPendingUpdate = { [weak self] in
             guard let self else { return false }
             return self.verifyServicesBeforeTermination()
+        }
+        TerminationGate.willTerminate = { [weak self] in
+            guard let self, !self.uninstalling else { return }
+            self.flush(); self.runtime.shutdown()
         }
         // Prevent an early quit before asynchronous startup recovery inspects
         // a record left by a previous process.
@@ -122,7 +134,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         Task {
             await recoverServicesAfterUpdate()
             do { try await retireLegacyOutputService() }
-            catch { self.error = "旧入力サービスを停止できませんでした: \(error.localizedDescription)" }
+            catch { self.error = String(format: L("旧入力サービスを停止できませんでした: %@"), error.localizedDescription) }
         }
         polling = Task { [weak self] in
             while !Task.isCancelled {
@@ -141,7 +153,11 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         catch { self.error = error.localizedDescription; saveStatus = "読み込みエラー" }
     }
     func reloadIfChanged() {
-        guard !dirty, saving == nil, let data = try? Data(contentsOf: store.resolvedURL), data != lastData else { return }
+        guard !dirty, saving == nil else { return }
+        let stamp = store.stamp()
+        guard stamp != lastStamp else { return }
+        lastStamp = stamp
+        guard let data = try? Data(contentsOf: store.resolvedURL), data != lastData else { return }
         reload()
     }
     func changed() {
@@ -165,7 +181,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
     func saveBeforeUpdate() throws {
         saving?.cancel(); saving = nil
-        guard flush() else { throw NSError(domain: "ReKey.Update", code: 3, userInfo: [NSLocalizedDescriptionKey: "設定を保存できませんでした。"] ) }
+        guard flush() else { throw NSError(domain: "ReKey.Update", code: 3, userInfo: [NSLocalizedDescriptionKey: L("設定を保存できませんでした。")] ) }
     }
     func selectProfile(_ id: String) { config.select(id); changed() }
     func togglePause() { resumeAfterSave = isPaused && !config.global.paused; config.global.paused = !isPaused; changed() }
@@ -227,7 +243,6 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     func revealConfig() { NSWorkspace.shared.selectFile(store.url.path, inFileViewerRootedAtPath: store.url.deletingLastPathComponent().path) }
     func openPrivacy(_ section: String) { if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(section)") { NSWorkspace.shared.open(url) } }
     func requestAgentPermissions() { DistributedNotificationCenter.default().postNotificationName(NSNotification.Name(ReKeyServiceIdentity.permissionNotification()), object: nil, userInfo: nil, deliverImmediately: true) }
-    func requestAccessibility() { requestAgentPermissions() }
     func requestInputMonitoring() {
         runtime.requestInputMonitoring()
         openPrivacy("Privacy_ListenEvent")
@@ -237,7 +252,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     private let driverDaemonPath = "/Library/Application Support/org.pqrs/Karabiner-DriverKit-VirtualHIDDevice/Applications/Karabiner-VirtualHIDDevice-Daemon.app/Contents/MacOS/Karabiner-VirtualHIDDevice-Daemon"
     func setupDriver() {
         guard FileManager.default.isExecutableFile(atPath: driverDaemonPath) else {
-            error = "Karabiner の仮想 HID ドライバをインストールしてください。README のセットアップ手順を確認してください。"
+            error = L("Karabiner の仮想 HID ドライバをインストールしてください。README のセットアップ手順を確認してください。")
             return
         }
         registerServices()
@@ -250,13 +265,12 @@ enum SettingsPage: String, CaseIterable, Identifiable {
             do {
                 try await retireLegacyOutputService()
                 await registerCurrentServices()
-            } catch { self.error = "旧入力サービスを停止できませんでした: \(error.localizedDescription)" }
+            } catch { self.error = String(format: L("旧入力サービスを停止できませんでした: %@"), error.localizedDescription) }
         }
     }
     private func updateServiceOperations() -> UpdateServiceRecovery.Operations {
         if let updateOperationsOverride { return updateOperationsOverride }
-        let services = ["core": SMAppService.daemon(plistName: ReKeyServiceIdentity.coreName() + ".plist"),
-                        "agent": SMAppService.agent(plistName: ReKeyServiceIdentity.agentName() + ".plist")]
+        let services = ["core": Self.coreService, "agent": Self.agentService]
         return UpdateServiceRecovery.Operations(
             status: { name in
                 guard let service = services[name] else { return .unavailable }
@@ -281,17 +295,17 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         do {
             try updateRecovery.verifyStopped(operations: updateServiceOperations())
             unsafePendingUpdate = false
-            updateWarning = "更新を再開するか、キャンセルしてください。"
+            updateWarning = L("更新を再開するか、キャンセルしてください。")
             return true
         } catch {
             unsafePendingUpdate = true
-            updateWarning = "終了前に入力サービスの停止を確認できません。「更新を確認」で更新をキャンセルしてください: \(error.localizedDescription)"
+            updateWarning = String(format: L("終了前に入力サービスの停止を確認できません。「更新を確認」で更新をキャンセルしてください: %@"), error.localizedDescription)
             return false
         }
     }
     func prepareServicesForUpdate() async throws {
         guard !recoveringServices, !serviceOperationInProgress, let build = currentBuild else {
-            throw NSError(domain: "ReKey.Update", code: 2, userInfo: [NSLocalizedDescriptionKey: "入力サービスの復旧中です。"])
+            throw NSError(domain: "ReKey.Update", code: 2, userInfo: [NSLocalizedDescriptionKey: L("入力サービスの復旧中です。")])
         }
         recoveringServices = true
         defer { recoveringServices = false; if monitorSystem { refreshSystem() } }
@@ -321,12 +335,12 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         } catch UpdateServiceRecovery.RecoveryError.pendingUpdate {
             updatePrepared = true
             unsafePendingUpdate = false
-            updateWarning = "更新を再開するか、キャンセルしてください。"
+            updateWarning = L("更新を再開するか、キャンセルしてください。")
             return false
         } catch {
             updatePrepared = updateRecovery.hasPendingRecovery
             unsafePendingUpdate = updatePrepared
-            let message = "更新後の入力サービスを復旧できませんでした。バックグラウンド項目を確認してください: \(error.localizedDescription)"
+            let message = String(format: L("更新後の入力サービスを復旧できませんでした。バックグラウンド項目を確認してください: %@"), error.localizedDescription)
             if updatePrepared { updateWarning = message } else { self.error = message }
             return false
         }
@@ -336,22 +350,26 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         Task {
             let recovered = await recoverServicesAfterUpdate(allowSameBuild: true)
             if preparation {
-                let message = "更新前に入力サービスを停止できませんでした。サービスを確認し、ReKey を再起動してから更新を再試行してください: \(failure.localizedDescription)"
+                let message = String(format: L("更新前に入力サービスを停止できませんでした。サービスを確認し、ReKey を再起動してから更新を再試行してください: %@"), failure.localizedDescription)
                 if recovered { self.error = message }
-                else if updatePrepared { self.updateWarning = message + "\n" + (self.updateWarning ?? "入力サービスの復旧状態を確認してください。") }
-                else { self.error = message + "\n" + (self.error ?? "入力サービスの復旧状態を確認してください。") }
+                else if updatePrepared { self.updateWarning = message + "\n" + (self.updateWarning ?? L("入力サービスの復旧状態を確認してください。")) }
+                else { self.error = message + "\n" + (self.error ?? L("入力サービスの復旧状態を確認してください。")) }
             }
         }
     }
+    private static var coreService: SMAppService { .daemon(plistName: ReKeyServiceIdentity.coreName() + ".plist") }
+    private static var agentService: SMAppService { .agent(plistName: ReKeyServiceIdentity.agentName() + ".plist") }
+    /// The development-era output daemon, replaced by rekey-core.
+    private static var legacyOutputService: SMAppService { .daemon(plistName: "jp.example.rekey.vhid.plist") }
     private func retireLegacyOutputService() async throws {
-        let legacy = SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist")
+        let legacy = Self.legacyOutputService
         if legacy.status == .notFound { try? await legacy.unregister() }
         else if legacy.status != .notRegistered { try await legacy.unregister() }
     }
     private func registerCurrentServices() async {
         var services = [
-            ("rekey-core", SMAppService.daemon(plistName: ReKeyServiceIdentity.coreName() + ".plist")),
-            ("ReKey Agent", SMAppService.agent(plistName: ReKeyServiceIdentity.agentName() + ".plist"))
+            ("rekey-core", Self.coreService),
+            ("ReKey Agent", Self.agentService)
         ]
         if FileManager.default.isExecutableFile(atPath: driverDaemonPath) {
             services.insert(("Virtual HID Daemon", SMAppService.daemon(plistName: "org.pqrs.service.daemon.Karabiner-VirtualHIDDevice-Daemon.plist")), at: 0)
@@ -383,8 +401,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
     private func stopServices() throws {
         // The official Virtual HID daemon is shared with other clients; keep it registered.
-        let services = [SMAppService.daemon(plistName: ReKeyServiceIdentity.coreName() + ".plist"), SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist"), SMAppService.agent(plistName: ReKeyServiceIdentity.agentName() + ".plist")]
-        for service in services where service.status != .notRegistered && service.status != .notFound { try service.unregister() }
+        for service in [Self.coreService, Self.legacyOutputService, Self.agentService] where service.status != .notRegistered && service.status != .notFound { try service.unregister() }
     }
     func restartServices() {
         guard !recoveringServices, !updatePrepared, !serviceOperationInProgress else { return }
@@ -392,13 +409,15 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         Task {
             defer { serviceOperationInProgress = false }
             do {
-                let services = [SMAppService.daemon(plistName: ReKeyServiceIdentity.coreName() + ".plist"), SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist"), SMAppService.agent(plistName: ReKeyServiceIdentity.agentName() + ".plist")]
                 // The async overload waits for the old process to exit before re-registering.
-                for service in services where service.status != .notRegistered && service.status != .notFound {
+                for service in [Self.coreService, Self.agentService] where service.status != .notRegistered && service.status != .notFound {
                     try await service.unregister()
                 }
-                await registerCurrentServices()
-            } catch { self.error = error.localizedDescription }
+            } catch { self.error = error.localizedDescription; return }
+            // Core is already stopped here; a stuck legacy record must not keep it unregistered.
+            do { try await retireLegacyOutputService() }
+            catch { self.error = String(format: L("旧入力サービスを停止できませんでした: %@"), error.localizedDescription) }
+            await registerCurrentServices()
         }
     }
     func unregisterServices() {
@@ -424,7 +443,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         } catch { self.error = error.localizedDescription }
     }
     func setLogin(_ enabled: Bool) {
-        do { if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }; config.global.start_at_login = enabled; changed() }
+        // The login item itself is the source of truth; redraw the toggle that reads it.
+        do { if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }; objectWillChange.send() }
         catch { self.error = error.localizedDescription }
     }
     func refreshSystem() {

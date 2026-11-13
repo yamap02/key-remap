@@ -77,7 +77,7 @@ import ReKeyModel
     var config = Configuration()
     config.profiles[0].name = "Preserved"
     config.global.disable_on_quit = false
-    try store.save(config)
+    try store.update { $0 = config }
     let data = try Data(contentsOf: store.url)
     let recovery = UpdateServiceRecovery(defaults: fixture.defaults)
     try await recovery.recover(build: "10", operations: fixture.operations())

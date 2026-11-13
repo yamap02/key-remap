@@ -56,6 +56,8 @@ struct RuleEditor: View {
     @State private var app = ""
     @State private var mandatory = ""
     @State private var advancedExisting = false
+    /// Last value handed to onSave (initially the opened rule), so opening the editor saves nothing.
+    @State private var saved: ComplexRule?
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("複合ルールを編集").font(.title2.bold())
@@ -107,11 +109,13 @@ struct RuleEditor: View {
         do {
             let parsed = try JSONDecoder().decode([JSONValue].self, from: Data(json.utf8))
             var candidate = rule; candidate.manipulators = parsed
+            guard candidate != saved else { error = nil; return }
             try validation(candidate)
-            onSave(candidate); error = nil
+            onSave(candidate); saved = candidate; error = nil
         } catch { self.error = error.localizedDescription }
     }
     func initialize() {
+        saved = rule
         let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         json = (try? String(data: enc.encode(rule.manipulators), encoding: .utf8)) ?? "[]"
         decodeJSON()
@@ -171,7 +175,7 @@ struct LayersView: View {
                     ForEach(state.layers) { layer in
                         HStack(spacing: 16) {
                             Image(systemName: "square.3.layers.3d").font(.title2).foregroundStyle(.tint)
-                            VStack(alignment: .leading, spacing: 5) { Text(layer.name).bold(); Text("\(KeyCatalog.label(layer.trigger.key)) · \(layer.mode == "hold" ? "押している間" : "トグル") · \(layer.map.count) キー").font(.caption).foregroundStyle(.secondary) }
+                            VStack(alignment: .leading, spacing: 5) { Text(layer.name).bold(); Text("\(KeyCatalog.label(layer.trigger.key)) · \(L(layer.mode == "hold" ? "押している間" : "トグル")) · \(layer.map.count) キー").font(.caption).foregroundStyle(.secondary) }
                             Spacer(); Button("編集") { editing = layer }
                             Button(role: .destructive) { state.layers.removeAll { $0.id == layer.id } } label: { Image(systemName: "trash") }
                         }.padding(.vertical, 12)
@@ -197,6 +201,8 @@ struct LayerEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var rows: [SimpleMapping] = []
     @State private var error: String?
+    /// Last value handed to onSave (initially the opened layer), so opening the editor saves nothing.
+    @State private var saved: Layer?
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("レイヤーを編集").font(.title2.bold())
@@ -210,7 +216,7 @@ struct LayerEditor: View {
             if let error { Text(error).foregroundStyle(.red).font(.caption) }
             HStack { Text("有効な変更を自動保存").font(.caption).foregroundStyle(.secondary); Spacer(); Button("閉じる") { dismiss() } }
         }.padding(24).frame(width: 600, height: 540)
-        .onAppear { rows = layer.map.sorted { $0.key < $1.key }.map { .init(from: $0.key, to: $0.value) } }
+        .onAppear { saved = layer; rows = layer.map.sorted { $0.key < $1.key }.map { .init(from: $0.key, to: $0.value) } }
         .onChange(of: rows) { persist() }
         .onChange(of: layer.name) { persist() }
         .onChange(of: layer.trigger) { persist() }
@@ -220,7 +226,8 @@ struct LayerEditor: View {
         guard Set(rows.map { $0.from.key }).count == rows.count, !layer.name.isEmpty, !existingNames.contains(layer.name) else { error = "レイヤー名と入力キーを重複しないように指定してください。"; return }
         var candidate = layer
         candidate.map = Dictionary(uniqueKeysWithValues: rows.map { ($0.from.key, $0.to[0].key) })
-        do { try validation(candidate); onSave(candidate); error = nil }
+        guard candidate != saved else { error = nil; return }
+        do { try validation(candidate); onSave(candidate); saved = candidate; error = nil }
         catch { self.error = error.localizedDescription }
 
     }

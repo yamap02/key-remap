@@ -24,12 +24,13 @@ ReKey はキーボード入力を扱い、root 権限で動作する入力サー
 必要環境: macOS 27、Apple Silicon、Xcode の macOS 27 SDK / Swift 6、Command Line Tools。
 
 ```sh
-git submodule update --init --recursive
 swift test
 scripts/test-core.sh
 scripts/build-app.sh
 open build/ReKey.app
 ```
+
+配布まわりの検証は `Tests/Distribution/` にあります。`python3 Tests/Distribution/test_*.py` はそのまま実行できます。`Tests/Distribution/test-build-identity.sh` は `rg` を使い、app をビルドします。`test-appcast.sh` と `test-sparkle-*.py` は Sparkle 2.9.6 のツールを `build/sparkle-tools/bin` に置いてから実行します（`swift build` 後なら `ditto .build/artifacts/sparkle/Sparkle/bin build/sparkle-tools/bin`）。
 
 `build/ReKey.app` に UI、Agent、`rekey-core`、`rekey-bench` と SMAppService 用 plist が入ります。開発用には ad-hoc 署名を使います。app の起動だけでは物理キーボードを占有しません。
 

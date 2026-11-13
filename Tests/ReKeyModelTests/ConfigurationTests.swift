@@ -25,7 +25,7 @@ import Foundation
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let store = ConfigurationStore(url: root.appendingPathComponent("rekey.json"))
-    for i in 0..<24 { var c = Configuration(); c.profiles[0].name = "Profile \(i)"; try store.save(c) }
+    for i in 0..<24 { var c = Configuration(); c.profiles[0].name = "Profile \(i)"; try store.update { $0 = c } }
     #expect(try store.load().activeProfile.name == "Profile 23")
     #expect(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("Backups").path).count == 20)
     let attrs = try FileManager.default.attributesOfItem(atPath: store.url.path)
@@ -36,10 +36,10 @@ import Foundation
     defer { try? FileManager.default.removeItem(at: root) }
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let target = root.appendingPathComponent("cloud.json"), link = root.appendingPathComponent("rekey.json")
-    try ConfigurationStore(url: target).save(.init())
+    try ConfigurationStore(url: target).update { $0 = .init() }
     try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
     var c = Configuration(); c.profiles[0].name = "Cloud"
-    try ConfigurationStore(url: link).save(c)
+    try ConfigurationStore(url: link).update { $0 = c }
     #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == target.path)
     #expect(try ConfigurationStore(url: target).load().activeProfile.name == "Cloud")
 }
@@ -84,9 +84,59 @@ import Foundation
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let store = ConfigurationStore(url: root.appendingPathComponent("rekey.json"))
-    try store.save(.init())
+    try store.update { $0 = .init() }
     let valid = try Data(contentsOf: store.url)
     var bad = Configuration(); bad.profiles[0].simple = [.init(from: "not_a_key", to: "a")]
-    #expect(throws: (any Error).self) { try store.save(bad) }
+    #expect(throws: (any Error).self) { try store.update { $0 = bad } }
     #expect(try Data(contentsOf: store.url) == valid)
+}
+@Test func itemIDsSurviveRoundTrip() throws {
+    var c = Configuration()
+    c.profiles[0].simple = [.init()]; c.profiles[0].layers = [.init()]; c.profiles[0].rules = [.init()]
+    let data = try c.encoded()
+    let first = try Configuration.decode(data), second = try Configuration.decode(data)
+    #expect(first == c)
+    #expect(second.activeProfile.simple[0].id == c.profiles[0].simple[0].id)
+    #expect(second.activeProfile.layers[0].id == c.profiles[0].layers[0].id)
+    #expect(second.activeProfile.rules[0].id == c.profiles[0].rules[0].id)
+}
+@Test func legacyFileWithoutItemIDsLoads() throws {
+    let legacy = #"{"schema_version":1,"global":{"thresholds_ms":{"alone":200,"held_down":500,"simultaneous":50}},"profiles":[{"name":"Default","selected":true,"simple":[{"from":{"key":"caps_lock"},"to":[{"key":"left_control"}]}],"layers":[{"name":"Nav","trigger":{"key":"spacebar"},"mode":"hold","map":{"h":"left_arrow"}}],"rules":[{"name":"Rule","manipulators":[{"type":"basic","from":{"key":"a"},"to":[{"key":"b"}]}]}]}]}"#
+    let c = try Configuration.decode(Data(legacy.utf8))
+    #expect(c.activeProfile.simple[0].to[0].key == "left_control")
+    #expect(c.activeProfile.layers[0].map["h"] == "left_arrow")
+    #expect(c.activeProfile.rules[0].name == "Rule")
+}
+@Test func backupsLiveNextToTheResolvedTarget() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let real = root.appendingPathComponent("real"), linked = root.appendingPathComponent("linked")
+    for dir in [real, linked] { try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) }
+    let target = real.appendingPathComponent("rekey.json"), link = linked.appendingPathComponent("rekey.json")
+    try ConfigurationStore(url: target).update { $0 = .init() }
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+    try ConfigurationStore(url: link).update { $0.profiles[0].name = "Changed" }
+    #expect(FileManager.default.fileExists(atPath: real.appendingPathComponent("Backups").path))
+    #expect(!FileManager.default.fileExists(atPath: linked.appendingPathComponent("Backups").path))
+}
+@Test func newShortcutsAvoidExistingOnes() throws {
+    var c = Configuration()
+    c.profiles[0].shortcut = Shortcut()
+    var second = Profile(name: "Second"); second.selected = false
+    c.profiles.append(second)
+    #expect(c.unusedShortcut().key == "2")
+    c.profiles[1].shortcut = c.unusedShortcut()
+    #expect(!c.shortcutConflicts(profile: c.profiles[1].id))
+    c.profiles[1].shortcut = Shortcut()
+    #expect(c.shortcutConflicts(profile: c.profiles[1].id))
+    c.profiles[1].shortcut?.key = "p"
+    #expect(c.shortcutConflicts(profile: c.profiles[1].id))
+}
+@Test func removedGlobalFieldsStillLoadAndAreNotWrittenBack() throws {
+    let legacy = #"{"schema_version":1,"global":{"check_for_updates":false,"show_in_menu_bar":false,"start_at_login":false,"disable_on_quit":true,"paused":false,"thresholds_ms":{"alone":200,"held_down":500,"simultaneous":50}},"profiles":[{"name":"Default","selected":true}]}"#
+    let c = try Configuration.decode(Data(legacy.utf8))
+    #expect(c.global.check_for_updates == false)
+    let written = try String(decoding: c.encoded(), as: UTF8.self)
+    #expect(!written.contains("show_in_menu_bar"))
+    #expect(!written.contains("start_at_login"))
 }

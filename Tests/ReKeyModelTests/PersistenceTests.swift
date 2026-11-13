@@ -10,7 +10,7 @@ private func temporaryStore() -> (URL, ConfigurationStore) {
 @Test func editorMergesAgentSelectionWithoutLosingMappings() throws {
     let (root, store) = temporaryStore(); defer { try? FileManager.default.removeItem(at: root) }
     var initial = Configuration(); var other = Profile(name: "Other"); other.selected = false; initial.profiles.append(other)
-    try store.save(initial)
+    try store.update { $0 = initial }
     let baseline = try store.snapshot()
     var draft = baseline.configuration; draft.profiles[0].simple.append(.init())
     try store.update { latest in latest.select(other.id); latest.global.paused = true }
@@ -22,7 +22,7 @@ private func temporaryStore() -> (URL, ConfigurationStore) {
 }
 @Test func conflictingEditsKeepDiskAndDraftIntact() throws {
     let (root, store) = temporaryStore(); defer { try? FileManager.default.removeItem(at: root) }
-    try store.save(.init()); let baseline = try store.snapshot()
+    try store.update { $0 = .init() }; let baseline = try store.snapshot()
     var draft = baseline.configuration; draft.profiles[0].name = "Editor"
     try store.update { $0.profiles[0].name = "Other process" }
     let before = try Data(contentsOf: store.url)
@@ -33,7 +33,7 @@ private func temporaryStore() -> (URL, ConfigurationStore) {
 @Test func concurrentProfileSelectionsConflictAsOneChoice() throws {
     let (root, store) = temporaryStore(); defer { try? FileManager.default.removeItem(at: root) }
     var c = Configuration(); var b = Profile(name: "B"); b.selected = false; var d = Profile(name: "C"); d.selected = false; c.profiles += [b, d]
-    try store.save(c); let baseline = try store.snapshot()
+    try store.update { $0 = c }; let baseline = try store.snapshot()
     var draft = baseline.configuration; draft.select(b.id)
     try store.update { $0.select(d.id) }
     #expect(throws: ConfigurationConflict.self) { try store.save(draft, basedOn: baseline.data) }
@@ -41,7 +41,7 @@ private func temporaryStore() -> (URL, ConfigurationStore) {
 }
 @Test func concurrentTransactionsLoseNoUpdates() async throws {
     let (root, store) = temporaryStore(); defer { try? FileManager.default.removeItem(at: root) }
-    try store.save(.init())
+    try store.update { $0 = .init() }
     try await withThrowingTaskGroup(of: Void.self) { group in
         for _ in 0..<8 { group.addTask { for _ in 0..<4 { try store.update { $0.global.thresholds_ms.alone += 1 } } } }
         try await group.waitForAll()
@@ -53,8 +53,8 @@ private func temporaryStore() -> (URL, ConfigurationStore) {
 }
 @Test func retainedBackupsAreTheNewestGenerations() throws {
     let (root, store) = temporaryStore(); defer { try? FileManager.default.removeItem(at: root) }
-    var c = Configuration(); try store.save(c)
-    for n in 1...24 { c.profiles[0].name = "Version \(n)"; try store.save(c) }
+    var c = Configuration(); try store.update { $0 = c }
+    for n in 1...24 { c.profiles[0].name = "Version \(n)"; try store.update { $0 = c } }
     let files = try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("Backups"), includingPropertiesForKeys: nil)
     let names = try files.map { try Configuration.decode(Data(contentsOf: $0)).activeProfile.name }
     #expect(Set(names) == Set((4...23).map { "Version \($0)" }))
@@ -62,7 +62,7 @@ private func temporaryStore() -> (URL, ConfigurationStore) {
 }
 @Test func unchangedSavesDoNotWriteOrCreateBackups() throws {
     let (root, store) = temporaryStore(); defer { try? FileManager.default.removeItem(at: root) }
-    try store.save(.init()); let baseline = try store.snapshot()
+    try store.update { $0 = .init() }; let baseline = try store.snapshot()
     let before = try FileManager.default.attributesOfItem(atPath: store.url.path)[.modificationDate] as? Date
     let saved = try store.save(baseline.configuration, basedOn: baseline.data)
     #expect(saved.data == baseline.data)
@@ -72,13 +72,13 @@ private func temporaryStore() -> (URL, ConfigurationStore) {
 @Test func newExternalFileIsNotOverwrittenByUnsavedWelcomeState() throws {
     let (root, store) = temporaryStore(); defer { try? FileManager.default.removeItem(at: root) }
     let fresh = try store.snapshot()
-    var other = Configuration(); other.profiles[0].name = "External"; try store.save(other)
+    var other = Configuration(); other.profiles[0].name = "External"; try store.update { $0 = other }
     #expect(throws: ConfigurationConflict.self) { try store.save(fresh.configuration, basedOn: fresh.data) }
     #expect(try store.load().activeProfile.name == "External")
 }
 @Test func unsafeFileAndLockModesAreRejected() throws {
     let (root, store) = temporaryStore(); defer { try? FileManager.default.removeItem(at: root) }
-    try store.save(.init()); try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: store.url.path)
+    try store.update { $0 = .init() }; try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: store.url.path)
     #expect(throws: (any Error).self) { try store.load() }
     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: store.url.path)
     let lock = root.appendingPathComponent(".rekey.json.lock")
@@ -89,7 +89,7 @@ private func temporaryStore() -> (URL, ConfigurationStore) {
 @Test func independentProfileAdditionsAndDiskOrderArePreserved() throws {
     let (root, store) = temporaryStore(); defer { try? FileManager.default.removeItem(at: root) }
     var initial = Configuration(); var b = Profile(name: "B"); b.selected = false; initial.profiles.append(b)
-    try store.save(initial); let baseline = try store.snapshot()
+    try store.update { $0 = initial }; let baseline = try store.snapshot()
     var draft = baseline.configuration; draft.profiles[0].name = "Renamed"
     var added = Profile(name: "Added"); added.selected = false; draft.profiles.append(added)
     try store.update { $0.profiles.swapAt(0, 1) }
@@ -99,7 +99,7 @@ private func temporaryStore() -> (URL, ConfigurationStore) {
 @Test func editingADeletedProfileIsAConflict() throws {
     let (root, store) = temporaryStore(); defer { try? FileManager.default.removeItem(at: root) }
     var initial = Configuration(); var b = Profile(name: "B"); b.selected = false; initial.profiles.append(b)
-    try store.save(initial); let baseline = try store.snapshot()
+    try store.update { $0 = initial }; let baseline = try store.snapshot()
     var draft = baseline.configuration; draft.profiles[1].name = "Edited"
     try store.update { $0.profiles.removeLast() }
     #expect(throws: ConfigurationConflict.self) { try store.save(draft, basedOn: baseline.data) }
@@ -107,7 +107,7 @@ private func temporaryStore() -> (URL, ConfigurationStore) {
 }
 @Test func canonicalAndSymlinkedWritersUseTheSameTransaction() throws {
     let (root, direct) = temporaryStore(); defer { try? FileManager.default.removeItem(at: root) }
-    try direct.save(.init())
+    try direct.update { $0 = .init() }
     let alias = root.appendingPathComponent("linked.json")
     try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: direct.url)
     let linked = ConfigurationStore(url: alias); let baseline = try linked.snapshot()

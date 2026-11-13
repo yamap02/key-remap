@@ -20,7 +20,7 @@ public enum KeyCatalog {
         v["illumination_decrement"] = 0xFF0009; v["illumination_increment"] = 0xFF0008; v["fn"] = 0xFF0003
         return v
     }()
-    public static let names = usages.keys.sorted()
+    public static let names = Set(usages.keys)
 
     public enum Category: String, CaseIterable, Identifiable, Sendable {
         case letters, numbers, symbols, modifiers, editing, navigation, function, keypad, japanese, media, system
