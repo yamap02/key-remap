@@ -9,6 +9,7 @@
 #include "VirtualHIDOutput.hpp"
 #include "PowerState.hpp"
 #include "InstalledFilesGuard.hpp"
+#include "LatencyProbe.hpp"
 #include <IOKit/IOMessage.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <IOKit/hid/IOHIDManager.h>
@@ -25,6 +26,9 @@
 
 namespace {
 uint64_t now_ms(){return uint64_t(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)/1000000);}
+uint64_t hid_ns(IOHIDValueRef v){static const auto base=[]{mach_timebase_info_data_t t{};mach_timebase_info(&t);return t;}();return IOHIDValueGetTimeStamp(v)*base.numer/base.denom;}
+// Key encoding shared by the physical and virtual keyboards; 0 for elements ReKey does not handle.
+rekey::Key hid_key(IOHIDValueRef v){auto element=IOHIDValueGetElement(v);auto page=IOHIDElementGetUsagePage(element),usage=IOHIDElementGetUsage(element);if((page!=7&&page!=12&&page!=0xff&&page!=0xff01)||usage==0)return 0;return page==7?usage:(page<<16)|usage;}
 // 0 when no regular user (uid >= 501) owns the console.
 uid_t console_user(){uid_t uid=0;gid_t gid=0;CFStringRef user=SCDynamicStoreCopyConsoleUser(nullptr,&uid,&gid);if(user)CFRelease(user);return uid<501?0:uid;}
 struct Device { IOHIDDeviceRef hid=nullptr;rekey::Identity identity;std::string name;std::unique_ptr<rekey::Engine> engine;bool seized=false,muted=false;uint64_t inputs=0,outputs=0,started=0,retry_at=0,capture_started=0; };
@@ -41,6 +45,8 @@ public:
     io_connect_t power_connection=IO_OBJECT_NULL;
     io_object_t system_notifier=IO_OBJECT_NULL,display_notifier=IO_OBJECT_NULL;
     IOHIDManagerRef manager=nullptr;std::array<Device,32> devices{};rekey::JSON config;std::string error="Configuration not loaded";uid_t uid=0;time_t modified=0;long modified_ns=0;uid_t rejected_uid=0;timespec rejected{};std::string rejected_error;dispatch_source_t config_watch=nullptr,link_watch=nullptr;std::string watch_path;
+    // Opened without seizing so its reports close each latency sample.
+    IOHIDDeviceRef virtual_keyboard=nullptr;rekey::LatencyProbe latency;os_log_t latency_log=os_log_create(REKEY_PRODUCT_ID,"latency");uint64_t latency_logged=0;
     rekey::VirtualHIDOutput output{REKEY_PRODUCT_ID};uint64_t output_epoch=0;bool paused=true,viewer=false,secure=true,conflict=false,input_monitoring=false,agent_accessibility=false;uint64_t viewer_deadline=0,housekeeping=0,conflict_checked=0,last_context=0,ui_deadline=0;std::array<Trace,2048> traces{};size_t trace_write=0,trace_read=0;struct PendingAction {uint32_t device;int action;};std::array<PendingAction,256> actions{};size_t action_write=0,action_read=0;rekey::Context context;
     Core(){
         manager=IOHIDManagerCreate(kCFAllocatorDefault,kIOHIDManagerOptionIndependentDevices);NSDictionary* match=@{@kIOHIDDeviceUsagePageKey:@1,@kIOHIDDeviceUsageKey:@6};IOHIDManagerSetDeviceMatching(manager,(__bridge CFDictionaryRef)match);
@@ -68,7 +74,7 @@ public:
         if(display_port)CFRunLoopAddSource(CFRunLoopGetMain(),IONotificationPortGetRunLoopSource(display_port),kCFRunLoopDefaultMode);
         if(!power_connection||!display_notifier)os_log_error(OS_LOG_DEFAULT,"ReKey power notifications unavailable: system=%{public}d display=%{public}d",bool(power_connection),bool(display_notifier));
     }
-    ~Core(){if(system_notifier)IODeregisterForSystemPower(&system_notifier);if(power_connection)IOServiceClose(power_connection);if(display_notifier)IOObjectRelease(display_notifier);if(system_port)IONotificationPortDestroy(system_port);if(display_port)IONotificationPortDestroy(display_port);if(config_watch)dispatch_source_cancel(config_watch);if(link_watch)dispatch_source_cancel(link_watch);stop();IOHIDManagerClose(manager,0);CFRelease(manager);}
+    ~Core(){if(system_notifier)IODeregisterForSystemPower(&system_notifier);if(power_connection)IOServiceClose(power_connection);if(display_notifier)IOObjectRelease(display_notifier);if(system_port)IONotificationPortDestroy(system_port);if(display_port)IONotificationPortDestroy(display_port);if(virtual_keyboard){IOHIDDeviceClose(virtual_keyboard,0);CFRelease(virtual_keyboard);}if(config_watch)dispatch_source_cancel(config_watch);if(link_watch)dispatch_source_cancel(link_watch);stop();IOHIDManagerClose(manager,0);CFRelease(manager);}
     void power_changed(bool changed){
         if(!changed)return;
         stop();
@@ -81,15 +87,25 @@ public:
     void add(IOHIDDeviceRef hid){
         auto str=[&](CFStringRef k){auto v=IOHIDDeviceGetProperty(hid,k);return v&&CFGetTypeID(v)==CFStringGetTypeID()?std::string([(__bridge NSString*)v UTF8String]):std::string();};
         auto num=[&](CFStringRef k){int n=0;auto v=IOHIDDeviceGetProperty(hid,k);if(v&&CFGetTypeID(v)==CFNumberGetTypeID())CFNumberGetValue((CFNumberRef)v,kCFNumberIntType,&n);return n;};
-        auto name=str(CFSTR(kIOHIDProductKey));if(name.find("VirtualHID")!=std::string::npos||name.find("ReKey Virtual")!=std::string::npos)return;
+        auto name=str(CFSTR(kIOHIDProductKey));
+        if(name.find("VirtualHID")!=std::string::npos||name.find("ReKey Virtual")!=std::string::npos){
+            if(name.starts_with("Karabiner DriverKit VirtualHIDKeyboard")&&!virtual_keyboard&&IOHIDDeviceOpen(hid,kIOHIDOptionsTypeNone)==kIOReturnSuccess){
+                virtual_keyboard=hid;CFRetain(hid);
+                IOHIDDeviceRegisterInputValueCallback(hid,[](void* ctx,IOReturn,void*,IOHIDValueRef v){static_cast<Core*>(ctx)->observed(v);},this);
+                IOHIDDeviceScheduleWithRunLoop(hid,CFRunLoopGetMain(),kCFRunLoopDefaultMode);
+            }
+            return;
+        }
         for(auto& d:devices)if(d.hid==hid)return;
         for(auto& d:devices)if(!d.hid){d.hid=hid;d.name=name;CFRetain(hid);d.identity={num(CFSTR(kIOHIDVendorIDKey)),num(CFSTR(kIOHIDProductIDKey)),str(CFSTR(kIOHIDSerialNumberKey)),false,"unknown"};int keyboard_type=num(CFSTR("KeyboardType"));int country=num(CFSTR(kIOHIDCountryCodeKey));d.identity.keyboard_type=keyboard_type==42||country==15?"jis":keyboard_type==41||country==32?"iso":keyboard_type==40||country==33?"ansi":"unknown";auto built=IOHIDDeviceGetProperty(hid,CFSTR(kIOHIDBuiltInKey));d.identity.builtin=built==kCFBooleanTrue||num(CFSTR(kIOHIDBuiltInKey))!=0;compile(d);break;}
     }
-    void remove(IOHIDDeviceRef hid){trace_read=trace_write;rejected_uid=0; /* A rejected device override may no longer apply. */action_read=action_write;for(auto& d:devices)if(d.hid==hid){release(d);CFRelease(d.hid);d=Device();break;}}
+    void remove(IOHIDDeviceRef hid){
+        if(hid==virtual_keyboard){IOHIDDeviceUnscheduleFromRunLoop(hid,CFRunLoopGetMain(),kCFRunLoopDefaultMode);IOHIDDeviceClose(hid,0);CFRelease(hid);virtual_keyboard=nullptr;latency.clear();return;}
+        trace_read=trace_write;rejected_uid=0; /* A rejected device override may no longer apply. */action_read=action_write;for(auto& d:devices)if(d.hid==hid){release(d);CFRelease(d.hid);d=Device();break;}}
     void compile(Device& d){if(config.is_null())return;try{install(d,rekey::Program::compile(config,d.identity));}catch(const std::exception& e){error=e.what();paused=true;stop();}}
     void install(Device& d,rekey::Program program){auto e=std::make_unique<rekey::Engine>(std::move(program),d.identity);e->update_context(context);release(d);d.engine=std::move(e);}
     // The reset releases every virtual key, so release() only clears engine state here; its sends are skipped while output is not ready.
-    void stop(){action_read=action_write;if(std::any_of(devices.begin(),devices.end(),[](const Device& d){return d.seized;}))output.reset();for(auto& d:devices)release(d);viewer=false;trace_read=trace_write;}
+    void stop(){action_read=action_write;if(std::any_of(devices.begin(),devices.end(),[](const Device& d){return d.seized;}))output.reset();for(auto& d:devices)release(d);viewer=false;trace_read=trace_write;latency.clear();}
     void release(Device& d){if(d.seized){if(d.engine)send(d.engine->release_all(now_ms()),d);IOHIDDeviceUnscheduleFromRunLoop(d.hid,CFRunLoopGetMain(),kCFRunLoopDefaultMode);IOHIDDeviceClose(d.hid,0);d.seized=false;}}
     void send(const rekey::Outputs& out,Device& d){
         if(!output.ready())return;
@@ -101,12 +117,18 @@ public:
     void value(IOHIDValueRef v){
         if(power.suspended())return;
         if(output_epoch!=output.epoch()||!output.ready()){stop();return;}
-        auto element=IOHIDValueGetElement(v);auto hid=IOHIDElementGetDevice(element);auto page=IOHIDElementGetUsagePage(element),usage=IOHIDElementGetUsage(element);if((page!=7&&page!=12&&page!=0xff&&page!=0xff01)||usage==0)return;
+        auto hid=IOHIDElementGetDevice(IOHIDValueGetElement(v));rekey::Key key=hid_key(v);if(!key)return;
         Device* d=nullptr;for(auto& x:devices)if(x.hid==hid){d=&x;break;}if(!d||!d->seized||!d->engine||d->muted)return;
         if(IOHIDValueGetTimeStamp(v)<d->capture_started)return;
-        rekey::Key key=page==7?usage:(page<<16)|usage;bool down=IOHIDValueGetIntegerValue(v)!=0;if(d->inputs++==0)d->started=now_ms();
+        bool down=IOHIDValueGetIntegerValue(v)!=0;if(d->inputs++==0)d->started=now_ms();
         auto out=d->engine->process({key,down,now_ms(),uint32_t(d-devices.data())});send(out,*d);
+        if(virtual_keyboard){auto input_ns=hid_ns(v);for(size_t i=0;i<out.size;++i)latency.sent(out.values[i].key,out.values[i].down,input_ns);}
         record(key,down,out,*d);
+    }
+    void observed(IOHIDValueRef v){if(auto key=hid_key(v))latency.observed(key,IOHIDValueGetIntegerValue(v)!=0,hid_ns(v));}
+    void log_latency(){
+        auto s=latency.take();if(!s.samples&&!s.unmatched)return;
+        os_log(latency_log,"physical-to-virtual latency samples=%llu p50_us=%llu p99_us=%llu max_us=%llu unmatched=%llu",s.samples,s.p50_ns/1000,s.p99_ns/1000,s.max_ns/1000,s.unmatched);
     }
     void record(rekey::Key input,bool down,const rekey::Outputs& out,Device& d){
         if(viewer&&!secure&&now_ms()-last_context<500&&!IsSecureEventInputEnabled()){
@@ -152,6 +174,7 @@ public:
         if(now_ms()-conflict_checked>=5000){conflict_checked=now_ms();conflict=karabiner();}
         if(now_ms()-housekeeping>=1000){housekeeping=now_ms();load();input_monitoring=IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)==kIOHIDAccessTypeGranted;}
         output.heartbeat();
+        if(now_ms()-latency_logged>=10000){latency_logged=now_ms();log_latency();}
         if(installed_files && (!installed_files_checked || now_ms()-installed_files_checked>=100)){
             installed_files_checked=now_ms();installed_files_ok=installed_files->unchanged();
         }

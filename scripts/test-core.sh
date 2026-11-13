@@ -13,3 +13,5 @@ build/output-lifecycle-tests
 
 xcrun clang++ -std=c++23 -O2 -Wall -Wextra -Werror -ICore Tests/Core/installed_files_guard_tests.cpp -o build/installed-files-guard-tests
 build/installed-files-guard-tests
+xcrun clang++ -std=c++23 -O2 -Wall -Wextra -Werror -ICore Tests/Core/latency_probe_tests.cpp -o build/latency-probe-tests
+build/latency-probe-tests
