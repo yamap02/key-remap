@@ -112,7 +112,7 @@ enum DaemonStatus: String {
             pendingInstallFailed: { [weak self] error in
                 self?.updatePrepared = true
                 self?.unsafePendingUpdate = true
-                self?.updateWarning = "保留中の更新を安全に続行できません。「更新を確認」で更新をキャンセルしてください: \(error.localizedDescription)"
+                self?.updateWarning = String(format: L("保留中の更新を安全に続行できません。「更新を確認」で更新をキャンセルしてください: %@"), error.localizedDescription)
             },
             aborted: { [weak self] error in self?.handleUpdateFailure(error, preparation: false) })
         TerminationGate.verifyPendingUpdate = { [weak self] in
@@ -134,7 +134,7 @@ enum DaemonStatus: String {
         Task {
             await recoverServicesAfterUpdate()
             do { try await retireLegacyOutputService() }
-            catch { self.error = "旧入力サービスを停止できませんでした: \(error.localizedDescription)" }
+            catch { self.error = String(format: L("旧入力サービスを停止できませんでした: %@"), error.localizedDescription) }
         }
         polling = Task { [weak self] in
             while !Task.isCancelled {
@@ -181,7 +181,7 @@ enum DaemonStatus: String {
     }
     func saveBeforeUpdate() throws {
         saving?.cancel(); saving = nil
-        guard flush() else { throw NSError(domain: "ReKey.Update", code: 3, userInfo: [NSLocalizedDescriptionKey: "設定を保存できませんでした。"] ) }
+        guard flush() else { throw NSError(domain: "ReKey.Update", code: 3, userInfo: [NSLocalizedDescriptionKey: L("設定を保存できませんでした。")] ) }
     }
     func selectProfile(_ id: String) { config.select(id); changed() }
     func togglePause() { resumeAfterSave = isPaused && !config.global.paused; config.global.paused = !isPaused; changed() }
@@ -252,7 +252,7 @@ enum DaemonStatus: String {
     private let driverDaemonPath = "/Library/Application Support/org.pqrs/Karabiner-DriverKit-VirtualHIDDevice/Applications/Karabiner-VirtualHIDDevice-Daemon.app/Contents/MacOS/Karabiner-VirtualHIDDevice-Daemon"
     func setupDriver() {
         guard FileManager.default.isExecutableFile(atPath: driverDaemonPath) else {
-            error = "Karabiner の仮想 HID ドライバをインストールしてください。README のセットアップ手順を確認してください。"
+            error = L("Karabiner の仮想 HID ドライバをインストールしてください。README のセットアップ手順を確認してください。")
             return
         }
         registerServices()
@@ -265,7 +265,7 @@ enum DaemonStatus: String {
             do {
                 try await retireLegacyOutputService()
                 await registerCurrentServices()
-            } catch { self.error = "旧入力サービスを停止できませんでした: \(error.localizedDescription)" }
+            } catch { self.error = String(format: L("旧入力サービスを停止できませんでした: %@"), error.localizedDescription) }
         }
     }
     private func updateServiceOperations() -> UpdateServiceRecovery.Operations {
@@ -295,17 +295,17 @@ enum DaemonStatus: String {
         do {
             try updateRecovery.verifyStopped(operations: updateServiceOperations())
             unsafePendingUpdate = false
-            updateWarning = "更新を再開するか、キャンセルしてください。"
+            updateWarning = L("更新を再開するか、キャンセルしてください。")
             return true
         } catch {
             unsafePendingUpdate = true
-            updateWarning = "終了前に入力サービスの停止を確認できません。「更新を確認」で更新をキャンセルしてください: \(error.localizedDescription)"
+            updateWarning = String(format: L("終了前に入力サービスの停止を確認できません。「更新を確認」で更新をキャンセルしてください: %@"), error.localizedDescription)
             return false
         }
     }
     func prepareServicesForUpdate() async throws {
         guard !recoveringServices, !serviceOperationInProgress, let build = currentBuild else {
-            throw NSError(domain: "ReKey.Update", code: 2, userInfo: [NSLocalizedDescriptionKey: "入力サービスの復旧中です。"])
+            throw NSError(domain: "ReKey.Update", code: 2, userInfo: [NSLocalizedDescriptionKey: L("入力サービスの復旧中です。")])
         }
         recoveringServices = true
         defer { recoveringServices = false; if monitorSystem { refreshSystem() } }
@@ -335,12 +335,12 @@ enum DaemonStatus: String {
         } catch UpdateServiceRecovery.RecoveryError.pendingUpdate {
             updatePrepared = true
             unsafePendingUpdate = false
-            updateWarning = "更新を再開するか、キャンセルしてください。"
+            updateWarning = L("更新を再開するか、キャンセルしてください。")
             return false
         } catch {
             updatePrepared = updateRecovery.hasPendingRecovery
             unsafePendingUpdate = updatePrepared
-            let message = "更新後の入力サービスを復旧できませんでした。バックグラウンド項目を確認してください: \(error.localizedDescription)"
+            let message = String(format: L("更新後の入力サービスを復旧できませんでした。バックグラウンド項目を確認してください: %@"), error.localizedDescription)
             if updatePrepared { updateWarning = message } else { self.error = message }
             return false
         }
@@ -350,10 +350,10 @@ enum DaemonStatus: String {
         Task {
             let recovered = await recoverServicesAfterUpdate(allowSameBuild: true)
             if preparation {
-                let message = "更新前に入力サービスを停止できませんでした。サービスを確認し、ReKey を再起動してから更新を再試行してください: \(failure.localizedDescription)"
+                let message = String(format: L("更新前に入力サービスを停止できませんでした。サービスを確認し、ReKey を再起動してから更新を再試行してください: %@"), failure.localizedDescription)
                 if recovered { self.error = message }
-                else if updatePrepared { self.updateWarning = message + "\n" + (self.updateWarning ?? "入力サービスの復旧状態を確認してください。") }
-                else { self.error = message + "\n" + (self.error ?? "入力サービスの復旧状態を確認してください。") }
+                else if updatePrepared { self.updateWarning = message + "\n" + (self.updateWarning ?? L("入力サービスの復旧状態を確認してください。")) }
+                else { self.error = message + "\n" + (self.error ?? L("入力サービスの復旧状態を確認してください。")) }
             }
         }
     }
@@ -416,7 +416,7 @@ enum DaemonStatus: String {
             } catch { self.error = error.localizedDescription; return }
             // Core is already stopped here; a stuck legacy record must not keep it unregistered.
             do { try await retireLegacyOutputService() }
-            catch { self.error = "旧入力サービスを停止できませんでした: \(error.localizedDescription)" }
+            catch { self.error = String(format: L("旧入力サービスを停止できませんでした: %@"), error.localizedDescription) }
             await registerCurrentServices()
         }
     }

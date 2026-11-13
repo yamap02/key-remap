@@ -57,13 +57,13 @@ struct ProfilesView: View {
                         TextField("プロファイル名", text: Binding(get: { p.name }, set: { state.config.profiles[i].name = $0; state.changed() })).textFieldStyle(.plain)
                         Spacer()
                         Text("\(p.simple.count) リマップ · \(p.rules.count) ルール").font(.caption).foregroundStyle(.secondary)
-                        Button("複製") { var copy = p; copy.id = UUID().uuidString; copy.name += " のコピー"; copy.selected = false; if copy.shortcut != nil { copy.shortcut = state.config.unusedShortcut() }; state.config.profiles.append(copy); state.changed() }
+                        Button("複製") { var copy = p; copy.id = UUID().uuidString; copy.name = String(format: L("%@ のコピー"), p.name); copy.selected = false; if copy.shortcut != nil { copy.shortcut = state.config.unusedShortcut() }; state.config.profiles.append(copy); state.changed() }
                         Button(role: .destructive) { deleting = p } label: { Image(systemName: "trash") }.disabled(state.config.profiles.count == 1)
                     }.padding(.vertical, 10)
                 }
             }.listStyle(.inset).frame(minHeight: 140, maxHeight: 260)
             HStack {
-                Button("プロファイルを追加", systemImage: "plus") { var p = Profile(name: "新しいプロファイル"); p.selected = false; state.config.profiles.append(p); state.changed() }
+                Button("プロファイルを追加", systemImage: "plus") { var p = Profile(name: L("新しいプロファイル")); p.selected = false; state.config.profiles.append(p); state.changed() }
                 Spacer(); Button("インポート…", systemImage: "square.and.arrow.down") { state.importFile() }; Button("書き出す…", systemImage: "square.and.arrow.up") { state.exportFile(profileOnly: true) }
             }
             GroupBox("キーボードショートカット · \(state.profile.name)") {

@@ -9,7 +9,7 @@ public struct ConfigurationSnapshot: Sendable {
 public enum ConfigurationConflict: LocalizedError {
     case changed(String)
     public var errorDescription: String? {
-        switch self { case .changed(let path): "別のプロセスでも設定が変更されました（\(path)）。編集中の内容は保持しています。再読込するか、変更を見直してください。" }
+        switch self { case .changed(let path): String(format: L("別のプロセスでも設定が変更されました（%@）。編集中の内容は保持しています。再読込するか、変更を見直してください。"), path) }
     }
 }
 
@@ -68,7 +68,7 @@ public struct ConfigurationStore: Sendable {
         var st = stat()
         guard fstat(fd, &st) == 0 else { throw posix() }
         guard st.st_uid == getuid(), (st.st_mode & S_IFMT) == S_IFREG, (st.st_mode & 0o077) == 0, st.st_size >= 0, st.st_size <= 4 * 1024 * 1024 else {
-            throw ConfigError.invalid("設定ファイルの所有者・アクセス権・サイズが不正です。")
+            throw ConfigError.invalid(L("設定ファイルの所有者・アクセス権・サイズが不正です。"))
         }
         var data = Data(count: Int(st.st_size))
         try data.withUnsafeMutableBytes { bytes in
@@ -94,12 +94,12 @@ public struct ConfigurationStore: Sendable {
         defer { close(fd) }
         var st = stat()
         guard fstat(fd, &st) == 0 else { throw posix() }
-        guard st.st_uid == getuid(), (st.st_mode & S_IFMT) == S_IFREG, st.st_mode & 0o077 == 0 else { throw ConfigError.invalid("設定ロックファイルの所有者またはアクセス権が不正です。") }
+        guard st.st_uid == getuid(), (st.st_mode & S_IFMT) == S_IFREG, st.st_mode & 0o077 == 0 else { throw ConfigError.invalid(L("設定ロックファイルの所有者またはアクセス権が不正です。")) }
         let deadline = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) + 2_000_000_000
         while flock(fd, LOCK_EX | LOCK_NB) != 0 {
             if errno == EINTR { continue }
             guard errno == EWOULDBLOCK || errno == EAGAIN else { throw posix() }
-            guard clock_gettime_nsec_np(CLOCK_UPTIME_RAW) < deadline else { throw ConfigError.invalid("別のプロセスが設定を保存中です。しばらくしてから再試行してください。") }
+            guard clock_gettime_nsec_np(CLOCK_UPTIME_RAW) < deadline else { throw ConfigError.invalid(L("別のプロセスが設定を保存中です。しばらくしてから再試行してください。")) }
             usleep(2_000)
         }
         defer { flock(fd, LOCK_UN) }
@@ -126,7 +126,7 @@ public struct ConfigurationStore: Sendable {
         guard rename(temporary.path, target.path) == 0 else { throw posix() }
         var result = ConfigurationSnapshot(configuration: config, data: data)
         do { try syncDirectory(target.deletingLastPathComponent()) }
-        catch { result.warnings.append("設定は保存しましたが、ディレクトリの同期に失敗しました: \(error.localizedDescription)") }
+        catch { result.warnings.append(String(format: L("設定は保存しましたが、ディレクトリの同期に失敗しました: %@"), error.localizedDescription)) }
         do {
             if fm.fileExists(atPath: backups.path) {
                 let files = try fm.contentsOfDirectory(at: backups, includingPropertiesForKeys: [.creationDateKey]).filter { $0.lastPathComponent.hasPrefix("rekey.json.bak.") }
@@ -140,7 +140,7 @@ public struct ConfigurationStore: Sendable {
                 }
                 for old in ordered.dropFirst(20) { try fm.removeItem(at: old.0) }
             }
-        } catch { result.warnings.append("設定は保存しましたが、古いバックアップの整理に失敗しました: \(error.localizedDescription)") }
+        } catch { result.warnings.append(String(format: L("設定は保存しましたが、古いバックアップの整理に失敗しました: %@"), error.localizedDescription)) }
         return result
     }
     private func writePrivate(_ data: Data, to target: URL) throws {

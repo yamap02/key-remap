@@ -17,11 +17,12 @@ import ServiceManagement
         .windowStyle(.automatic)
         .commands {
             CommandGroup(replacing: .newItem) { OpenSettingsButton() }
+            // Menu commands get no locale environment; L() follows the app's language setting.
             CommandMenu("ReKey") {
                 Button(L(state.isPaused ? "再開" : "一時停止")) { state.togglePause() }.disabled(state.recoveringServices || state.updatePrepared)
-                Button("設定を再読込") { state.reload(reloadEngine: true) }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(state.recoveringServices || state.updatePrepared)
-                Button("設定をインポート…") { state.importFile() }.disabled(state.recoveringServices || state.updatePrepared)
-                Button("設定を書き出す…") { state.exportFile() }.disabled(state.recoveringServices || state.updatePrepared)
+                Button(L("設定を再読込")) { state.reload(reloadEngine: true) }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(state.recoveringServices || state.updatePrepared)
+                Button(L("設定をインポート…")) { state.importFile() }.disabled(state.recoveringServices || state.updatePrepared)
+                Button(L("設定を書き出す…")) { state.exportFile() }.disabled(state.recoveringServices || state.updatePrepared)
             }
         }
         Window("ReKey EventViewer", id: "events") {
@@ -39,7 +40,7 @@ import ServiceManagement
 // Commands cannot read openWindow from the App; it reopens the window even after it was closed.
 struct OpenSettingsButton: View {
     @Environment(\.openWindow) private var openWindow
-    var body: some View { Button("設定を開く…") { openWindow(id: "settings"); NSApp.activate(ignoringOtherApps: true) }.keyboardShortcut(",") }
+    var body: some View { Button(L("設定を開く…")) { openWindow(id: "settings"); NSApp.activate(ignoringOtherApps: true) }.keyboardShortcut(",") }
 }
 struct MenuContent: View {
     @ObservedObject var state: AppState

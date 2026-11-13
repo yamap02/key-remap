@@ -201,18 +201,18 @@ public struct Configuration: Codable, Equatable, Sendable {
     public func validated() throws -> Configuration { _ = try encoded(); return self }
     /// Validates once and returns the canonical bytes that the C++ validator also checked.
     public func encoded() throws -> Data {
-        guard schema_version == 1 else { throw ConfigError.invalid("対応していない schema_version: \(schema_version)") }
-        guard !profiles.isEmpty else { throw ConfigError.invalid("プロファイルは最低 1 つ必要です。") }
-        guard Set(profiles.map(\.id)).count == profiles.count else { throw ConfigError.invalid("プロファイル ID が重複しています。") }
-        guard profiles.filter(\.selected).count == 1 else { throw ConfigError.invalid("選択されたプロファイルは 1 つ必要です。") }
+        guard schema_version == 1 else { throw ConfigError.invalid(String(format: L("対応していない schema_version: %lld"), schema_version)) }
+        guard !profiles.isEmpty else { throw ConfigError.invalid(L("プロファイルは最低 1 つ必要です。")) }
+        guard Set(profiles.map(\.id)).count == profiles.count else { throw ConfigError.invalid(L("プロファイル ID が重複しています。")) }
+        guard profiles.filter(\.selected).count == 1 else { throw ConfigError.invalid(L("選択されたプロファイルは 1 つ必要です。")) }
         let t = global.thresholds_ms
-        guard (1...5000).contains(t.alone), (1...5000).contains(t.held_down), (1...500).contains(t.simultaneous) else { throw ConfigError.invalid("判定閾値が範囲外です。") }
+        guard (1...5000).contains(t.alone), (1...5000).contains(t.held_down), (1...500).contains(t.simultaneous) else { throw ConfigError.invalid(L("判定閾値が範囲外です。")) }
         for p in profiles {
             if let shortcut = p.shortcut {
-                guard KeyCatalog.macKeyCodes.values.contains(shortcut.key), !shortcut.modifiers.isEmpty, shortcut.modifiers.allSatisfy({ ["control", "option", "shift", "command"].contains($0) }), !shortcut.key.contains("command"), !shortcut.key.contains("control"), !shortcut.key.contains("shift"), !shortcut.key.contains("option") else { throw ConfigError.invalid("プロファイルのショートカットが無効です。") }
+                guard KeyCatalog.macKeyCodes.values.contains(shortcut.key), !shortcut.modifiers.isEmpty, shortcut.modifiers.allSatisfy({ ["control", "option", "shift", "command"].contains($0) }), !shortcut.key.contains("command"), !shortcut.key.contains("control"), !shortcut.key.contains("shift"), !shortcut.key.contains("option") else { throw ConfigError.invalid(L("プロファイルのショートカットが無効です。")) }
             }
             try Self.validate(simple: p.simple, layers: p.layers, rules: p.rules)
-            for d in p.devices { guard ["auto", "ansi", "iso", "jis"].contains(d.keyboard_type) else { throw ConfigError.invalid("キーボード種別が無効です。") }; try Self.validate(simple: d.simple, layers: d.layers, rules: d.rules) }
+            for d in p.devices { guard ["auto", "ansi", "iso", "jis"].contains(d.keyboard_type) else { throw ConfigError.invalid(L("キーボード種別が無効です。")) }; try Self.validate(simple: d.simple, layers: d.layers, rules: d.rules) }
             for pattern in p.auto_select.frontmost_app { _ = try NSRegularExpression(pattern: pattern) }
         }
         let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
@@ -224,14 +224,14 @@ public struct Configuration: Codable, Equatable, Sendable {
     }
     private static func validate(simple: [SimpleMapping], layers: [Layer], rules: [ComplexRule]) throws {
         for s in simple {
-            guard KeyCatalog.names.contains(s.from.key), s.to.count == 1, s.to.allSatisfy({ KeyCatalog.names.contains($0.key) }) else { throw ConfigError.invalid("単純リマップに未対応のキーがあります。") }
+            guard KeyCatalog.names.contains(s.from.key), s.to.count == 1, s.to.allSatisfy({ KeyCatalog.names.contains($0.key) }) else { throw ConfigError.invalid(L("単純リマップに未対応のキーがあります。")) }
         }
-        guard Set(layers.map(\.name)).count == layers.count else { throw ConfigError.invalid("レイヤー名が重複しています。") }
+        guard Set(layers.map(\.name)).count == layers.count else { throw ConfigError.invalid(L("レイヤー名が重複しています。")) }
         for l in layers {
-            guard !l.name.isEmpty, ["hold", "toggle"].contains(l.mode), KeyCatalog.names.contains(l.trigger.key), l.map.allSatisfy({ KeyCatalog.names.contains($0.key) && KeyCatalog.names.contains($0.value) }) else { throw ConfigError.invalid("レイヤーの設定が無効です。") }
+            guard !l.name.isEmpty, ["hold", "toggle"].contains(l.mode), KeyCatalog.names.contains(l.trigger.key), l.map.allSatisfy({ KeyCatalog.names.contains($0.key) && KeyCatalog.names.contains($0.value) }) else { throw ConfigError.invalid(L("レイヤーの設定が無効です。")) }
         }
         for r in rules {
-            guard !r.manipulators.isEmpty else { throw ConfigError.invalid("ルールに manipulator が必要です。") }
+            guard !r.manipulators.isEmpty else { throw ConfigError.invalid(L("ルールに manipulator が必要です。")) }
             for m in r.manipulators {
                 try RuleValidator.validate(m)
             }

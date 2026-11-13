@@ -1,4 +1,5 @@
 import Foundation
+import ReKeyModel
 
 // Records intent before stopping anything so an interrupted recovery can be
 // retried by the next UI process. This does not alter the user's config file.
@@ -14,8 +15,8 @@ import Foundation
         case pendingUpdate
         var errorDescription: String? {
             switch self {
-            case .unavailable(let name): return "サービスを利用できません: \(name)"
-            case .pendingUpdate: return "更新が保留中です。更新を確認して再開またはキャンセルしてください。"
+            case .unavailable(let name): return String(format: L("サービスを利用できません: %@"), name)
+            case .pendingUpdate: return L("更新が保留中です。更新を確認して再開またはキャンセルしてください。")
             }
         }
     }

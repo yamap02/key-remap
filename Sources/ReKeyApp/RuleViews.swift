@@ -175,7 +175,7 @@ struct LayersView: View {
                     ForEach(state.layers) { layer in
                         HStack(spacing: 16) {
                             Image(systemName: "square.3.layers.3d").font(.title2).foregroundStyle(.tint)
-                            VStack(alignment: .leading, spacing: 5) { Text(layer.name).bold(); Text("\(KeyCatalog.label(layer.trigger.key)) · \(layer.mode == "hold" ? "押している間" : "トグル") · \(layer.map.count) キー").font(.caption).foregroundStyle(.secondary) }
+                            VStack(alignment: .leading, spacing: 5) { Text(layer.name).bold(); Text("\(KeyCatalog.label(layer.trigger.key)) · \(L(layer.mode == "hold" ? "押している間" : "トグル")) · \(layer.map.count) キー").font(.caption).foregroundStyle(.secondary) }
                             Spacer(); Button("編集") { editing = layer }
                             Button(role: .destructive) { state.layers.removeAll { $0.id == layer.id } } label: { Image(systemName: "trash") }
                         }.padding(.vertical, 12)
