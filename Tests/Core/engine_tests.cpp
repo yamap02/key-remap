@@ -150,6 +150,10 @@ int main(){
         m["conditions"]={{{"type","keyboard_type_if"},{"keyboard_types",JSON::array({"jis"})}}};c["profiles"][0]["rules"]={rule(m)};c["profiles"][0]["devices"]={{{"id",{{"vendor_id",1},{"product_id",2}}},{"keyboard_type","jis"}}};e=engine(c,{1,2});expect(e.process({4,true,0}),{{5,true}},"keyboard type override condition");
         m["conditions"][0]["type"]="keyboard_type_unless";c["profiles"][0]["rules"]={rule(m)};e=engine(c,{1,2});expect(e.process({4,true,0}),{{4,true}},"keyboard type unless");
     }
+    {
+        auto c=base();auto m=basic("a","b");m["conditions"]={{{"type","device_if"},{"identifiers",JSON::array({{{"vendor_id",1},{"product_id",2},{"serial",nullptr}}})}}};c["profiles"][0]["rules"]={rule(m)};
+        auto e=engine(c,{1,2,"A"});expect(e.process({4,true,0}),{{5,true}},"device condition null serial matches any serial");e=engine(c,{1,3,"A"});expect(e.process({4,true,0}),{{4,true}},"device condition null serial still checks product");
+    }
     // Benchmark only the transform; physical-to-virtual latency is a separate hardware test.
     auto c=base();for(int i=0;i<200;++i)c["profiles"][0]["rules"].push_back(rule(basic(i==199?"a":"b","c")));auto e=engine(c);std::vector<double> us;us.reserve(10000);
     for(int i=0;i<10000;++i){auto start=std::chrono::steady_clock::now();measure_allocations=true;auto o=e.process({4,(i%2)==0,uint64_t(i)});measure_allocations=false;auto end=std::chrono::steady_clock::now();check(o.size==1,"benchmark output");us.push_back(std::chrono::duration<double,std::micro>(end-start).count());}
