@@ -45,6 +45,8 @@ struct DevicesView: View {
 struct ProfilesView: View {
     @ObservedObject var state: AppState
     @State private var deleting: Profile?
+    /// Keeps blank lines while typing; only non-empty lines are stored as patterns.
+    @State private var patterns = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("仕事、アプリ、キーボードに合わせて切り替える。").foregroundStyle(.secondary)
@@ -73,7 +75,15 @@ struct ProfilesView: View {
             GroupBox("自動切替 · \(state.profile.name)") {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("最前面アプリの bundle ID（正規表現、1 行ずつ）").font(.caption).foregroundStyle(.secondary)
-                    TextEditor(text: Binding(get: { state.profile.auto_select.frontmost_app.joined(separator: "\n") }, set: { state.config.profiles[state.profileIndex].auto_select.frontmost_app = $0.split(separator: "\n").map(String.init); state.changed() })).font(.system(.body, design: .monospaced)).frame(height: 66)
+                    TextEditor(text: $patterns).font(.system(.body, design: .monospaced)).frame(height: 66)
+                        .onAppear { patterns = state.profile.auto_select.frontmost_app.joined(separator: "\n") }
+                        .onChange(of: patterns) { _, text in
+                            let lines = text.split(separator: "\n").map(String.init)
+                            if lines != state.profile.auto_select.frontmost_app { state.config.profiles[state.profileIndex].auto_select.frontmost_app = lines; state.changed() }
+                        }
+                        .onChange(of: state.profile.auto_select.frontmost_app) { _, stored in
+                            if patterns.split(separator: "\n").map(String.init) != stored { patterns = stored.joined(separator: "\n") }
+                        }
                     Text("例: ^com\\.apple\\.Terminal$").font(.caption).foregroundStyle(.secondary)
                     Text("現在のアプリ: \(state.frontmostApp)").font(.caption).textSelection(.enabled)
                     Divider()
