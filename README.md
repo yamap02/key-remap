@@ -109,6 +109,8 @@ log stream --style compact --predicate 'subsystem == "jp.example.rekey" AND cate
 
 サブシステム名はビルド時の `REKEY_PRODUCT_ID` です（上の例は開発版の既定値）。`rekey-bench --physical` は引き続き未対応です。
 
+公開・配布の判断と運用については [インターネット公開・配布の準備](docs/public-distribution-readiness-ja.md) を参照してください。Apple Developer Program 未登録のため、製品版の署名・公証は保留です。
+
 ## 配布署名
 
 配布用の pkg は `REKEY_RELEASE=1` を付けて作ります。付けないと開発用の経路になり、app を再ビルドして署名時刻を付けず、Team ID・Installer 署名・公証の検査も行いません。必要な変数（`REKEY_TEAM_ID`、`REKEY_UPDATE_ARCHIVE` など）と手順は [Sparkle 配布手順](docs/sparkle-distribution-ja.md) の手順 2〜5 に従ってください。
