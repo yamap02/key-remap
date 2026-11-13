@@ -6,7 +6,6 @@
 #include <vector>
 #include <regex>
 #include <algorithm>
-#include <cstring>
 #include <string_view>
 namespace rekey {
 using JSON = nlohmann::json;
