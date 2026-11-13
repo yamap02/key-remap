@@ -27,7 +27,7 @@ struct Condition {
     bool unless=false;std::vector<std::regex> patterns;struct DeviceMatch { int vendor,product;std::string serial; };std::vector<DeviceMatch> devices;std::vector<std::string> strings;int index=0,value=0;
 };
 struct Action { enum Kind { key, variable, layer, sticky, user } kind=key; Key code=0;uint8_t modifiers=0;int index=0,value=0; };
-struct Actions { std::array<Action,max_actions> values{};size_t size=0;void add(Action a){if(size==max_actions)throw std::runtime_error("Too many actions (maximum 16)");values[size++]=a;} };
+struct Actions { std::array<Action,max_actions> values{};size_t size=0;void add(Action a){if(size==max_actions)throw std::runtime_error("Too many actions (maximum "+std::to_string(max_actions)+")");values[size++]=a;} };
 struct Rule {
     std::string name;
     std::array<Key,4> from{};size_t from_count=0;
@@ -43,7 +43,7 @@ struct Program {
     std::vector<Rule> rules;std::vector<LayerMap> layers;std::vector<std::string> variables;
     std::array<std::vector<uint16_t>,max_keys> by_key;
     std::string keyboard_type="unknown";uint64_t layer_tap_ms=200;bool ignore=false,disable_builtin=false,fn_media=true;
-    int variable_index(const std::string& name) { auto i=std::find(variables.begin(),variables.end(),name);if(i!=variables.end())return int(i-variables.begin());if(variables.size()==max_variables)throw std::runtime_error("Too many variables");variables.push_back(name);return int(variables.size()-1); }
+    int variable_index(const std::string& name) { auto i=std::find(variables.begin(),variables.end(),name);if(i!=variables.end())return int(i-variables.begin());if(variables.size()==max_variables)throw std::runtime_error("Too many variables (maximum "+std::to_string(max_variables)+")");variables.push_back(name);return int(variables.size()-1); }
     int layer_index(const std::string& name) const { for(size_t i=0;i<layers.size();++i)if(layers[i].name==name)return int(i);throw std::runtime_error("Unknown layer: "+name); }
     Actions actions(const JSON& a) {
         if(!a.is_array())throw std::runtime_error("Actions must be an array");Actions out;
@@ -68,20 +68,20 @@ struct Program {
         auto combined=[&](const char* field){JSON a=specific.value(field,JSON::array());for(auto& x:p.value(field,JSON::array()))a.push_back(x);return a;};
         for(auto& s:combined("simple")) {auto f=rekey::key(s.at("from").at("key"));auto& targets=s.at("to");if(targets.size()!=1)throw std::runtime_error("Simple mapping needs one target");auto k=slot(f);if(k==max_keys)throw std::runtime_error("Key outside supported range");if(!out.simple[k])out.simple[k]=rekey::key(targets[0].at("key"));}
         for(auto& l:combined("layers")) {
-            if(out.layers.size()==max_layers)throw std::runtime_error("Too many layers");
+            if(out.layers.size()==max_layers)throw std::runtime_error("Too many layers (maximum "+std::to_string(max_layers)+")");
             auto name=l.at("name").get<std::string>();if(std::any_of(out.layers.begin(),out.layers.end(),[&](auto& x){return x.name==name;}))continue;
             LayerMap lm;lm.name=name;lm.trigger=rekey::key(l.at("trigger").at("key"));auto mode=l.at("mode").get<std::string>();if(mode!="hold" && mode!="toggle")throw std::runtime_error("Invalid layer mode");lm.toggle=mode=="toggle";
             for(auto i=l.at("map").begin();i!=l.at("map").end();++i){auto k=slot(rekey::key(i.key()));if(k==max_keys)throw std::runtime_error("Key outside supported range");lm.map[k]=rekey::key(i.value());}out.layers.push_back(lm);
         }
         const auto& thresholds=config.at("global").at("thresholds_ms");out.layer_tap_ms=thresholds.at("alone");
         for(auto& group:combined("rules"))for(auto& m:group.at("manipulators")) {
-            if(out.rules.size()==max_rules)throw std::runtime_error("Too many manipulators");
+            if(out.rules.size()==max_rules)throw std::runtime_error("Too many manipulators (maximum "+std::to_string(max_rules)+")");
             if(m.at("type")!="basic")throw std::runtime_error("Unsupported manipulator");Rule r;r.name=group.at("name");const auto& f=m.at("from");
-            if(f.contains("simultaneous")) { for(auto& k:f.at("simultaneous")){if(r.from_count==4)throw std::runtime_error("Maximum four simultaneous keys");auto member=rekey::key(k.at("key"));if(std::find(r.from.begin(),r.from.begin()+r.from_count,member)!=r.from.begin()+r.from_count)throw std::runtime_error("Duplicate simultaneous key");r.from[r.from_count++]=member;}if(r.from_count<2)throw std::runtime_error("Simultaneous requires two to four keys"); }
+            if(f.contains("simultaneous")) { for(auto& k:f.at("simultaneous")){if(r.from_count==r.from.size())throw std::runtime_error("Too many simultaneous keys (maximum "+std::to_string(r.from.size())+")");auto member=rekey::key(k.at("key"));if(std::find(r.from.begin(),r.from.begin()+r.from_count,member)!=r.from.begin()+r.from_count)throw std::runtime_error("Duplicate simultaneous key");r.from[r.from_count++]=member;}if(r.from_count<2)throw std::runtime_error("Simultaneous requires two to four keys"); }
             else if(f.contains("key")) {r.from[0]=rekey::key(f.at("key"));r.from_count=1;}
             else if(f.value("any",std::string())=="key_code")r.any_key=true;
             else throw std::runtime_error("Missing from key");
-            static const JSON no_object=JSON::object();const auto& mods=f.contains("modifiers")?f.at("modifiers"):no_object;for(auto& mod:mods.value("mandatory",JSON::array())) {if(r.mandatory_count==8)throw std::runtime_error("Too many mandatory modifiers");auto mask=modifier_mask(mod);r.mandatory[r.mandatory_count++]=mask;r.allowed|=mask;}
+            static const JSON no_object=JSON::object();const auto& mods=f.contains("modifiers")?f.at("modifiers"):no_object;for(auto& mod:mods.value("mandatory",JSON::array())) {if(r.mandatory_count==r.mandatory.size())throw std::runtime_error("Too many mandatory modifiers (maximum "+std::to_string(r.mandatory.size())+")");auto mask=modifier_mask(mod);r.mandatory[r.mandatory_count++]=mask;r.allowed|=mask;}
             for(auto& mod:mods.value("optional",JSON::array())) {if(mod=="any")r.any_modifiers=true;else r.allowed|=modifier_mask(mod);}
             r.alone_ms=thresholds.at("alone");r.held_ms=thresholds.at("held_down");r.chord_ms=thresholds.at("simultaneous");
             const auto& params=m.contains("parameters")?m.at("parameters"):no_object;r.alone_ms=params.value("basic.to_if_alone_timeout_milliseconds",r.alone_ms);r.held_ms=params.value("basic.to_if_held_down_threshold_milliseconds",r.held_ms);r.chord_ms=params.value("basic.simultaneous_threshold_milliseconds",r.chord_ms);

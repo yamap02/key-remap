@@ -25,6 +25,8 @@
 
 namespace {
 uint64_t now_ms(){return uint64_t(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)/1000000);}
+// 0 when no regular user (uid >= 501) owns the console.
+uid_t console_user(){uid_t uid=0;gid_t gid=0;CFStringRef user=SCDynamicStoreCopyConsoleUser(nullptr,&uid,&gid);if(user)CFRelease(user);return uid<501?0:uid;}
 struct Device { IOHIDDeviceRef hid=nullptr;rekey::Identity identity;std::string name;std::unique_ptr<rekey::Engine> engine;bool seized=false,muted=false;uint64_t inputs=0,outputs=0,started=0,retry_at=0,capture_started=0; };
 struct Trace {uint64_t time;uint32_t device,key,output;bool down,output_down;int rule;uint8_t input_modifiers,output_modifiers;};
 class Core {
@@ -39,7 +41,7 @@ public:
     io_connect_t power_connection=IO_OBJECT_NULL;
     io_object_t system_notifier=IO_OBJECT_NULL,display_notifier=IO_OBJECT_NULL;
     IOHIDManagerRef manager=nullptr;std::array<Device,32> devices{};rekey::JSON config;std::string error="Configuration not loaded";uid_t uid=0;time_t modified=0;long modified_ns=0;uid_t rejected_uid=0;timespec rejected{};std::string rejected_error;dispatch_source_t config_watch=nullptr,link_watch=nullptr;std::string watch_path;
-    rekey::VirtualHIDOutput output;uint64_t output_epoch=0;bool paused=true,viewer=false,secure=true,conflict=false,input_monitoring=false,agent_accessibility=false;uint64_t viewer_deadline=0,housekeeping=0,conflict_checked=0,last_context=0,ui_deadline=0;std::array<Trace,2048> traces{};size_t trace_write=0,trace_read=0;struct PendingAction {uint32_t device;int action;};std::array<PendingAction,256> actions{};size_t action_write=0,action_read=0;rekey::Context context;
+    rekey::VirtualHIDOutput output{REKEY_PRODUCT_ID};uint64_t output_epoch=0;bool paused=true,viewer=false,secure=true,conflict=false,input_monitoring=false,agent_accessibility=false;uint64_t viewer_deadline=0,housekeeping=0,conflict_checked=0,last_context=0,ui_deadline=0;std::array<Trace,2048> traces{};size_t trace_write=0,trace_read=0;struct PendingAction {uint32_t device;int action;};std::array<PendingAction,256> actions{};size_t action_write=0,action_read=0;rekey::Context context;
     Core(){
         manager=IOHIDManagerCreate(kCFAllocatorDefault,kIOHIDManagerOptionIndependentDevices);NSDictionary* match=@{@kIOHIDDeviceUsagePageKey:@1,@kIOHIDDeviceUsageKey:@6};IOHIDManagerSetDeviceMatching(manager,(__bridge CFDictionaryRef)match);
         IOHIDManagerRegisterDeviceMatchingCallback(manager,[](void* ctx,IOReturn,void*,IOHIDDeviceRef d){static_cast<Core*>(ctx)->add(d);},this);
@@ -115,7 +117,7 @@ public:
     }
 
     bool karabiner(){
-        int bytes=proc_listallpids(nullptr,0);std::vector<pid_t> pids(size_t(bytes)+32);
+        int pid_count=proc_listallpids(nullptr,0);std::vector<pid_t> pids(size_t(pid_count)+32);
         int count=proc_listallpids(pids.data(),int(pids.size()*sizeof(pid_t)));
         for(int i=0;i<count;++i){char path[PROC_PIDPATHINFO_MAXSIZE]{};if(proc_pidpath(pids[i],path,sizeof(path))>0){std::string name=path;if(name.ends_with("/Karabiner-Core-Service")||name.ends_with("/karabiner_grabber"))return true;}}
         return false;
@@ -126,8 +128,8 @@ public:
         dispatch_source_set_event_handler(source,^{load();});dispatch_source_set_cancel_handler(source,^{close(fd);});dispatch_resume(source);return source;
     }
     void load(){
-        uid_t console_uid=0;gid_t gid=0;CFStringRef user=SCDynamicStoreCopyConsoleUser(nullptr,&console_uid,&gid);if(user)CFRelease(user);
-        if(console_uid<501){paused=true;uid=0;stop();return;}
+        uid_t console_uid=console_user();
+        if(!console_uid){paused=true;uid=0;stop();return;}
         auto pw=getpwuid(console_uid);if(!pw)return;std::string path=std::string(pw->pw_dir)+"/Library/Application Support/ReKey/rekey.json";
         struct stat st{};if(stat(path.c_str(),&st)!=0){paused=true;error="Configuration file not found";stop();return;}
         if(st.st_uid!=console_uid||(st.st_mode&077)!=0||!S_ISREG(st.st_mode)||st.st_size>off_t(rekey::max_config_bytes)){paused=true;error="Configuration ownership, permissions or size rejected";stop();return;}
@@ -184,7 +186,7 @@ Core* core=nullptr;
 }
 
 namespace {
-bool allowed(uid_t caller,bool require_owner){uid_t console=0;gid_t gid;CFStringRef user=SCDynamicStoreCopyConsoleUser(nullptr,&console,&gid);if(user)CFRelease(user);return caller>=501&&caller==console&&(!require_owner||caller==core->uid);}
+bool allowed(uid_t caller,bool require_owner){auto console=console_user();return console&&caller==console&&(!require_owner||caller==core->uid);}
 }
 @interface Control : NSObject <ReKeyControl>
 @end
@@ -228,8 +230,8 @@ bool allowed(uid_t caller,bool require_owner){uid_t console=0;gid_t gid;CFString
 @implementation Listener
 - (BOOL)listener:(NSXPCListener*)listener shouldAcceptNewConnection:(NSXPCConnection*)connection {
     (void)listener;
-    uid_t uid=connection.effectiveUserIdentifier;uid_t console=0;gid_t gid;CFStringRef u=SCDynamicStoreCopyConsoleUser(nullptr,&console,&gid);if(u)CFRelease(u);
-    if(uid<501||uid!=console||!self.requirement.length)return NO;
+    uid_t uid=connection.effectiveUserIdentifier;auto console=console_user();
+    if(!console||uid!=console||!self.requirement.length)return NO;
     [connection setCodeSigningRequirement:self.requirement];connection.exportedInterface=[NSXPCInterface interfaceWithProtocol:@protocol(ReKeyControl)];connection.exportedObject=[Control new];[connection resume];return YES;
 }
 @end
