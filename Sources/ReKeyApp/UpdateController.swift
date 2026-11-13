@@ -99,7 +99,7 @@ import Sparkle
     // idempotent after the first install choice has stopped the services.
     @objc(updater:shouldPostponeRelaunchForUpdate:untilInvokingBlock:)
     func updater(_ updater: SPUUpdater, shouldPostponeRelaunchForUpdate item: SUAppcastItem,
-                 untilInvoking installHandler: @escaping () -> Void) -> Bool {
+                 untilInvokingBlock installHandler: @escaping () -> Void) -> Bool {
         preparationGeneration += 1
         let generation = preparationGeneration
         Task { @MainActor in

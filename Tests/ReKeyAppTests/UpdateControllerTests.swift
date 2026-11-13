@@ -14,7 +14,7 @@ import ObjectiveC.runtime
     let sparkle = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
     let selector = NSSelectorFromString("updater:shouldPostponeRelaunchForUpdate:untilInvokingBlock:")
     #expect(controller.responds(to: selector))
-    #expect(controller.updater(sparkle.updater, shouldPostponeRelaunchForUpdate: .empty(), untilInvoking: { installed = true }))
+    #expect(controller.updater(sparkle.updater, shouldPostponeRelaunchForUpdate: .empty(), untilInvokingBlock: { installed = true }))
     for _ in 0..<100 where continuation == nil { try await Task.sleep(for: .milliseconds(1)) }
     let resume = try #require(continuation)
     #expect(!installed)
@@ -32,7 +32,7 @@ import ObjectiveC.runtime
         await withCheckedContinuation { continuation = $0 }
     }, aborted: { _ in aborts += 1 })
     let sparkle = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
-    #expect(controller.updater(sparkle.updater, shouldPostponeRelaunchForUpdate: .empty(), untilInvoking: { installed = true }))
+    #expect(controller.updater(sparkle.updater, shouldPostponeRelaunchForUpdate: .empty(), untilInvokingBlock: { installed = true }))
     for _ in 0..<100 where continuation == nil { try await Task.sleep(for: .milliseconds(1)) }
     let resume = try #require(continuation)
     #expect(controller.responds(to: NSSelectorFromString("updater:didAbortWithError:")))
@@ -50,7 +50,7 @@ import ObjectiveC.runtime
         throw NSError(domain: "test", code: 1)
     }, pendingInstallFailed: { _ in failed = true })
     let sparkle = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
-    #expect(controller.updater(sparkle.updater, shouldPostponeRelaunchForUpdate: .empty(), untilInvoking: { installed = true }))
+    #expect(controller.updater(sparkle.updater, shouldPostponeRelaunchForUpdate: .empty(), untilInvokingBlock: { installed = true }))
     for _ in 0..<100 where !failed { try await Task.sleep(for: .milliseconds(1)) }
     #expect(failed)
     #expect(!installed)
