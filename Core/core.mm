@@ -159,8 +159,8 @@ public:
         record(key,down,out,*d);
     }
     void arm_engine_timer(){
-        auto now=now_ms();uint64_t next=rekey::Engine::no_deadline;
-        for(auto& d:devices)if(d.seized&&d.engine&&!d.muted)next=std::min(next,d.engine->next_deadline(now));
+        uint64_t next=rekey::Engine::no_deadline;
+        for(auto& d:devices)if(d.seized&&d.engine&&!d.muted)next=std::min(next,d.engine->next_deadline());
         if(next==armed_deadline)return;armed_deadline=next;
         if(next==rekey::Engine::no_deadline){dispatch_source_set_timer(engine_timer,DISPATCH_TIME_FOREVER,DISPATCH_TIME_FOREVER,0);return;}
         // now_ms() reads CLOCK_UPTIME_RAW, the clock dispatch_time() counts from.
@@ -168,7 +168,11 @@ public:
         dispatch_source_set_timer(engine_timer,dispatch_time(DISPATCH_TIME_NOW,int64_t(at>current?at-current:0)),DISPATCH_TIME_FOREVER,0);
     }
     void run_engine_timers(){
-        armed_deadline=rekey::Engine::no_deadline;auto t=now_ms();
+        armed_deadline=rekey::Engine::no_deadline;
+        // Same preconditions as value(): never emit into a suspended or reset output session.
+        if(power.suspended())return;
+        if(output_epoch!=output.epoch()||!output.ready()){stop();return;}
+        auto t=now_ms();
         for(auto& d:devices){if(!d.seized||!d.engine||d.muted)continue;
             auto timed=d.engine->tick(t);send(timed,d);if(timed.size)record(0,false,timed,d);
             if(d.engine->paused()){paused=true;error="Emergency stop activated";}

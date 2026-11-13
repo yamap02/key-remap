@@ -78,8 +78,8 @@ int main(){
         expect(e.process({57,true,0}),{{224,true}},"tap hold immediate");expect(e.process({57,false,100}),{{224,false},{41,true},{41,false},{43,true},{43,false}},"alone and after");
         e=engine(c);e.process({57,true,100});expect(e.tick(599),{},"held not early");expect(e.tick(600),{{224,false},{225,true}},"held threshold");expect(e.process({57,false,700}),{{225,false},{43,true},{43,false}},"held release, no alone");
         // The core arms one timer at next_deadline(); after tick(t) it must lie after t or the timer would spin.
-        e=engine(c);check(e.next_deadline(0)==Engine::no_deadline,"idle has no deadline");e.process({57,true,100});check(e.next_deadline(100)==600,"held deadline");
-        e.tick(599);check(e.next_deadline(599)==600,"held deadline before threshold");e.tick(600);check(e.next_deadline(600)==Engine::no_deadline,"no deadline once held");
+        e=engine(c);check(e.next_deadline()==Engine::no_deadline,"idle has no deadline");e.process({57,true,100});check(e.next_deadline()==600,"held deadline");
+        e.tick(599);check(e.next_deadline()==600,"held deadline before threshold");e.tick(600);check(e.next_deadline()==Engine::no_deadline,"no deadline once held");
         e=engine(c);e.process({57,true,0});e.process({4,true,50});auto output=e.process({57,false,100});check(std::none_of(output.values.begin(),output.values.begin()+output.size,[](auto o){return o.key==41;}),"interrupted alone suppressed");
     }
     {
@@ -88,7 +88,7 @@ int main(){
         e=engine(c);e.process({4,true,100});expect(e.tick(150),{{4,true}},"expired chord passthrough");expect(e.process({4,false,160}),{{4,false}},"expired release");
         e=engine(c);e.process({4,true,100});expect(e.process({4,false,120}),{{4,true},{4,false}},"short failed chord tap preserved");
         e=engine(c);e.process({4,true,100});expect(e.process({5,true,150}),{{4,true}},"boundary chord member already emitted stays plain");expect(e.process({4,false,160}),{{5,true},{4,false}},"boundary plain member is released after the pending member, keeping physical order");
-        e=engine(c);e.process({4,true,100});check(e.next_deadline(100)==150,"chord deadline");e.tick(149);check(e.next_deadline(149)==150,"chord deadline before threshold");e.tick(150);check(e.next_deadline(150)==Engine::no_deadline,"no deadline once chord expires");
+        e=engine(c);e.process({4,true,100});check(e.next_deadline()==150,"chord deadline");e.tick(149);check(e.next_deadline()==150,"chord deadline before threshold");e.tick(150);check(e.next_deadline()==Engine::no_deadline,"no deadline once chord expires");
         e=engine(c);e.process({4,true,100});expect(e.process({6,true,110}),{{4,true},{6,true}},"non-member down resolves pending chord first");
         e=engine(c);e.process({6,true,90});e.process({4,true,100});expect(e.process({6,false,110}),{{4,true},{6,false}},"pending chord resolves before an earlier key is released");
         e=engine(c);e.process({5,true,100});e.tick(150);expect(e.process({4,true,200}),{},"chord wait with an emitted member");expect(e.process({5,false,210}),{{4,true},{5,false}},"release of an emitted member resolves pending first");
@@ -112,7 +112,7 @@ int main(){
         auto c=base();auto m=basic("a","b");m["from"]["modifiers"]={{"mandatory",JSON::array({"command"})}};c["profiles"][0]["rules"]={rule(m)};auto e=engine(c);expect(e.process({4,true,1}),{{4,true}},"mandatory required");e.process({4,false,2});e.process({227,true,3});expect(e.process({4,true,4}),{{227,false},{5,true}},"modifier group matches and consumes left command");
     }
     {
-        auto c=base();auto e=engine(c);e.process({224,true,1});e.process({226,true,2});e.process({227,true,3});e.process({41,true,4});check(e.next_deadline(4)==1004,"emergency deadline");auto o=e.tick(1004);check(e.paused(),"physical emergency chord pauses after hold");check(o.size>=3,"emergency releases modifiers");
+        auto c=base();auto e=engine(c);e.process({224,true,1});e.process({226,true,2});e.process({227,true,3});e.process({41,true,4});check(e.next_deadline()==1004,"emergency deadline");auto o=e.tick(1004);check(e.paused(),"physical emergency chord pauses after hold");check(o.size>=3,"emergency releases modifiers");
     }
     {
         auto c=base();auto m=basic("a","b");m["to"]={{{"shell_command","true"}}};c["profiles"][0]["rules"]={rule(m)};auto e=engine(c);auto o=e.process({4,true,1});check(o.size==0&&o.user_action_count==1,"user action queued without root execution");check(e.process({4,false,2}).user_action_count==0,"user action not repeated on release");

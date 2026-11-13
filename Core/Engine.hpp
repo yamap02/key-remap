@@ -119,7 +119,7 @@ inline void validate_config(std::string_view data) {
 class Engine {
     struct Press { bool down=false,alone=true,held=false,pending=false,suppressed=false,plain_emitted=false;uint8_t suppress_mask=0;Key mapped=0;uint64_t started=0;int rule=-1,layer=-1; };
     Program program_;Identity identity_;std::array<Press,max_keys> presses_{};std::array<int,max_variables> variables_{};std::bitset<max_layers> layers_;std::array<uint16_t,max_keys> output_counts_{};std::array<uint16_t,8> suppressions_{};uint8_t sticky_=0;Key sticky_owner_=0;
-    bool paused_=false;uint64_t emergency_start_=0;
+    bool paused_=false;uint64_t emergency_start_=0,last_tick_=0;
     void emit(Key k,bool down,uint64_t t,Outputs& out,int rule=-1) {
         auto i=slot(k);if(i>=max_keys)return;
         auto& count=output_counts_[i];if(down){if(count++==0)out.push(k,true,t,rule);}else if(count && --count==0)out.push(k,false,t,rule);
@@ -219,9 +219,11 @@ public:
     }
     Outputs release_all(uint64_t t) {Outputs out;for(size_t i=0;i<max_keys;++i)if(output_counts_[i]){Key k=key_for_slot(i);out.push(k,false,t);output_counts_[i]=0;}presses_={};layers_.reset();variables_={};suppressions_={};sticky_=0;sticky_owner_=0;emergency_start_=0;return out;}
     static constexpr uint64_t no_deadline=UINT64_MAX;
-    // The earliest time after `now` at which tick() can change state; mirrors tick()'s conditions.
-    uint64_t next_deadline(uint64_t now)const {
-        uint64_t next=no_deadline;auto later=[&](uint64_t at){if(at>now)next=std::min(next,at);};
+    // The earliest time after the last tick() (process() ticks too) at which tick()
+    // can change state; mirrors tick()'s conditions. Measured from the last tick,
+    // not the caller's clock, so a deadline that has already passed is still returned.
+    uint64_t next_deadline()const {
+        uint64_t next=no_deadline;auto later=[&](uint64_t at){if(at>last_tick_)next=std::min(next,at);};
         if(emergency_start_)later(emergency_start_+1000);
         for(const auto& p:presses_){if(!p.down)continue;
             if(p.pending){const auto mods=modifiers();for(auto ri:program_.by_key[slot(p.mapped)]){auto& r=program_.rules[ri];if(r.from_count>1&&matches(r,mods))later(p.started+r.chord_ms);}}
@@ -230,7 +232,7 @@ public:
         return next;
     }
     Outputs tick(uint64_t t) {
-        Outputs out;
+        Outputs out;last_tick_=t;
         if(emergency_start_ && t-emergency_start_>=1000){out=release_all(t);paused_=true;emergency_start_=0;return out;}
         for(size_t i=0;i<max_keys;++i){auto& p=presses_[i];if(!p.down)continue;
             if(p.pending){bool wait=false;const auto mods=modifiers();for(auto ri:program_.by_key[slot(p.mapped)])if(program_.rules[ri].from_count>1 && matches(program_.rules[ri],mods) && t-p.started<program_.rules[ri].chord_ms)wait=true;
