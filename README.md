@@ -103,11 +103,15 @@ build/rekey-bench --config "$HOME/Library/Application Support/ReKey/rekey.json" 
 
 ## 配布署名
 
+配布用の pkg は `REKEY_RELEASE=1` を付けて作ります。付けないと開発用の経路になり、app を再ビルドして署名時刻を付けず、Team ID・Installer 署名・公証の検査も行いません。必要な変数（`REKEY_TEAM_ID`、`REKEY_UPDATE_ARCHIVE` など）と手順は [Sparkle 配布手順](docs/sparkle-distribution-ja.md) の手順 2〜5 に従ってください。
+
 ```sh
+REKEY_RELEASE=1 \
 REKEY_SIGNING_IDENTITY='Developer ID Application: ...' \
 REKEY_INSTALLER_IDENTITY='Developer ID Installer: ...' \
 REKEY_NOTARY_PROFILE='your-keychain-profile' \
-scripts/build-pkg.sh
+REKEY_UPDATE_ARCHIVE=build/ReKey-<版>.zip \
+scripts/build-pkg.sh   # REKEY_PRODUCT_ID などは手順 2 の build-app.sh と同じ値を設定
 ```
 
 実在する Team ID、製品 bundle ID、DriverKit entitlement と provisioning profile は未設定です。現在の `jp.example.rekey` は開発用です。署名済み pkg / 公証 / Homebrew Cask / Sparkle 更新を出荷する前に、[要件表](docs/requirements.md) の配布ゲートを満たす必要があります。
