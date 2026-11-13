@@ -1,5 +1,31 @@
+# Swift and Xcode build products
 .build/
 build/
-.DS_Store
 .swiftpm/
+DerivedData/
+*.xcarchive/
+*.dSYM/
+
+# Xcode user-specific settings
+xcuserdata/
 *.xcuserstate
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Local configuration and signing credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.p12
+*.p8
+*.mobileprovision
+*.provisionprofile
+
+# Local logs and macOS metadata
+*.log
+.DS_Store
