@@ -8,8 +8,8 @@
 namespace fs = std::filesystem;
 static void write(const fs::path& p, const char* text = "original") { std::ofstream(p) << text; }
 int main() {
-    char temp[] = "/tmp/rekey-guard.XXXXXX";
-    const auto directory = fs::path(mkdtemp(temp));
+    auto temp = (fs::temp_directory_path() / "rekey-guard.XXXXXX").string();
+    const auto directory = fs::path(mkdtemp(temp.data()));
     const auto app = directory / "app", agent = directory / "agent", core = directory / "core";
     write(app); write(agent); write(core);
     auto paths = std::array<std::string, 3>{app.string(), agent.string(), core.string()};
