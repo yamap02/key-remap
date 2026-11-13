@@ -111,6 +111,10 @@ enum SettingsPage: String, CaseIterable, Identifiable {
             guard let self else { return false }
             return self.verifyServicesBeforeTermination()
         }
+        TerminationGate.willTerminate = { [weak self] in
+            guard let self, !self.uninstalling else { return }
+            self.flush(); self.runtime.shutdown()
+        }
         // Prevent an early quit before asynchronous startup recovery inspects
         // a record left by a previous process.
         if self.updateRecovery.hasPendingRecovery {

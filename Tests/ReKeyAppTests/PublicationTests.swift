@@ -149,3 +149,15 @@ private func event(_ index: Int) -> TraceEvent {
         #expect(runtime.eventLog.events.isEmpty)
     }
 }
+
+@Test @MainActor func terminationFlushesPendingEditsWithoutTheSettingsWindow() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = ConfigurationStore(url: directory.appendingPathComponent("rekey.json"))
+    let state = AppState(store: store, startMonitoring: false)
+    state.config.profiles[0].name = "Saved on quit"
+    state.changed()
+    ReKeyApplicationDelegate().applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+    #expect(try store.load().profiles[0].name == "Saved on quit")
+    withExtendedLifetime(state) {}
+}

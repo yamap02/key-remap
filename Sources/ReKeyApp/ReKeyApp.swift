@@ -12,14 +12,11 @@ import ServiceManagement
             SettingsView(state: state).environment(\.locale, language == "system" ? .autoupdatingCurrent : Locale(identifier: language))
                 .disabled(state.recoveringServices || state.updatePrepared)
                 .frame(minWidth: 920, minHeight: 640)
-                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
-                    if !state.uninstalling { state.flush(); state.runtime.shutdown() }
-                }
         }
         .defaultSize(width: 1080, height: 760)
         .windowStyle(.automatic)
         .commands {
-            CommandGroup(replacing: .newItem) { Button("設定を開く…") { openSettings() }.keyboardShortcut(",") }
+            CommandGroup(replacing: .newItem) { OpenSettingsButton() }
             CommandMenu("ReKey") {
                 Button(L(state.isPaused ? "再開" : "一時停止")) { state.togglePause() }.disabled(state.recoveringServices || state.updatePrepared)
                 Button("設定を再読込") { state.reload(reloadEngine: true) }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(state.recoveringServices || state.updatePrepared)
@@ -38,7 +35,11 @@ import ServiceManagement
                 .help("ReKey · \(L(state.statusTitle))")
         }
     }
-    private func openSettings() { NSApp.activate(ignoringOtherApps: true); NSApp.windows.first(where: { $0.title == "ReKey" })?.makeKeyAndOrderFront(nil) }
+}
+// Commands cannot read openWindow from the App; it reopens the window even after it was closed.
+struct OpenSettingsButton: View {
+    @Environment(\.openWindow) private var openWindow
+    var body: some View { Button("設定を開く…") { openWindow(id: "settings"); NSApp.activate(ignoringOtherApps: true) }.keyboardShortcut(",") }
 }
 struct MenuContent: View {
     @ObservedObject var state: AppState

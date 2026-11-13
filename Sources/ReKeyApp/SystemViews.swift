@@ -166,6 +166,7 @@ struct GeneralView: View {
 struct EventViewer: View {
     @ObservedObject var state: AppState
     @ObservedObject private var log: EventLog
+    @Environment(\.openWindow) private var openWindow
     @State private var paused = false
     init(state: AppState) {
         self.state = state
@@ -180,7 +181,7 @@ struct EventViewer: View {
                 Button("クリア", systemImage: "trash") { state.runtime.eventLog.clear() }
             }
             if !state.eventViewerReady {
-                ContentUnavailableView { Label(L(state.runtime.status == nil ? "入力サービスへの接続待ち" : state.inputMonitoringReady ? "ReKeyAgent の権限と接続を確認してください" : "入力監視の許可が必要です"), systemImage: "waveform.path") } description: { Text("通常のリマップにはアクセシビリティは不要です。EventViewer では ReKeyAgent による入力欄の安全確認が必要です。") } actions: { Button("EventViewer のアクセスを許可") { state.requestAccessibility(); state.openPrivacy("Privacy_Accessibility") }; Button("権限を確認") { state.page = .permissions; NSApp.windows.first(where: { $0.title == "ReKey" })?.makeKeyAndOrderFront(nil) } }
+                ContentUnavailableView { Label(L(state.runtime.status == nil ? "入力サービスへの接続待ち" : state.inputMonitoringReady ? "ReKeyAgent の権限と接続を確認してください" : "入力監視の許可が必要です"), systemImage: "waveform.path") } description: { Text("通常のリマップにはアクセシビリティは不要です。EventViewer では ReKeyAgent による入力欄の安全確認が必要です。") } actions: { Button("EventViewer のアクセスを許可") { state.requestAccessibility(); state.openPrivacy("Privacy_Accessibility") }; Button("権限を確認") { state.page = .permissions; openWindow(id: "settings"); NSApp.activate(ignoringOtherApps: true) } }
             } else {
                 Table(log.events) {
                     TableColumn("時刻") { e in Text(String(format: "%.3f", Double(e.time_ns)/1_000_000_000)).monospacedDigit() }.width(90)
