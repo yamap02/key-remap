@@ -11,7 +11,6 @@ struct RuntimeStatus: Decodable, Equatable, Sendable {
     var seized_devices: Int
     var conflict: Bool
     var error: String
-    var uid: UInt32
 }
 struct TraceEvent: Decodable, Identifiable, Sendable {
     var id = UUID()
@@ -36,7 +35,7 @@ struct TraceEvent: Decodable, Identifiable, Sendable {
     var inputMonitoringReady: Bool { status?.input_monitoring == true }
     var agentAccessibilityReady: Bool { status?.agent_accessibility == true }
     var eventViewerReady: Bool { inputMonitoringReady && agentAccessibilityReady }
-    @Published var connectionError: String?
+    var connectionError: String?
     let eventLog = EventLog()
     private(set) var viewing = false
     private(set) var viewerSession: UInt64 = 0

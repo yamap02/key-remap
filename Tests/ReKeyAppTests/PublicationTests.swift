@@ -17,7 +17,7 @@ import ReKeyModel
 
 private func readyStatus() -> RuntimeStatus {
     RuntimeStatus(paused: false, driver_ready: true, agent_accessibility: true,
-                  input_monitoring: true, seized_devices: 1, conflict: false, error: "", uid: 501)
+                  input_monitoring: true, seized_devices: 1, conflict: false, error: "")
 }
 
 private func event(_ index: Int) -> TraceEvent {

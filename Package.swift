@@ -2,7 +2,6 @@
 import PackageDescription
 let package = Package(name: "ReKey", platforms: [.macOS("27.0")], products: [
     .executable(name: "ReKey", targets: ["ReKeyApp"]),
-    .library(name: "ReKeyModel", targets: ["ReKeyModel"]),
     .executable(name: "ReKeyAgent", targets: ["ReKeyAgent"])
 ], dependencies: [
     .package(url: "https://github.com/sparkle-project/Sparkle.git", exact: "2.9.6")

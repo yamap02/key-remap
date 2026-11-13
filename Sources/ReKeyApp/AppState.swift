@@ -30,6 +30,11 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
 }
 
+/// The raw value is the localization key shown in the permissions view.
+enum DaemonStatus: String {
+    case running = "稼働中", paused = "一時停止中", conflict = "Karabiner と競合", waiting = "接続済み・入力待ち", disconnected = "未接続"
+}
+
 // Publish UI values explicitly. Transport/task bookkeeping must never take part
 // in SwiftUI Observation tracking in this long-lived menu bar process.
 @MainActor final class AppState: ObservableObject {
@@ -64,7 +69,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     let runtime: RuntimeClient
     private(set) var updates: UpdateController!
     private var runtimeChanges: AnyCancellable?
-    var daemonStatus: String { runtime.status.map { $0.seized_devices > 0 && !$0.paused && !$0.conflict ? "稼働中" : $0.paused ? "一時停止中" : $0.conflict ? "Karabiner と競合" : "接続済み・入力待ち" } ?? "未接続" }
+    var daemonStatus: DaemonStatus { runtime.status.map { $0.seized_devices > 0 && !$0.paused && !$0.conflict ? .running : $0.paused ? .paused : $0.conflict ? .conflict : .waiting } ?? .disconnected }
     @Published var importResult: ImportResult?
     @Published var showImportReview = false
     @Published var showWelcome = false
@@ -81,9 +86,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     private var hid: IOHIDManager?
     var profileIndex: Int { config.profiles.firstIndex(where: \.selected) ?? 0 }
     var profile: Profile { config.profiles[profileIndex] }
-    var scopeLabel: String { selectedDevice == "all" ? "すべてのキーボード" : devices.first(where: { $0.id == selectedDevice })?.name ?? selectedDevice }
     var isPaused: Bool { config.global.paused || (runtime.status?.paused ?? false) }
-    var operational: Bool { daemonStatus == "稼働中" && driverActive && !config.global.paused }
+    var operational: Bool { daemonStatus == .running && driverActive && !config.global.paused }
     var statusTitle: String { recoveringServices || updatePrepared ? "更新処理中" : isPaused ? "一時停止中" : operational ? "リマップ有効" : "セットアップが必要です" }
     var statusColor: Color { recoveringServices || updatePrepared ? .orange : isPaused ? .secondary : operational ? .green : .orange }
     init(store: ConfigurationStore = ConfigurationStore(), runtime: RuntimeClient = RuntimeClient(), startMonitoring: Bool = true,
@@ -239,7 +243,6 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     func revealConfig() { NSWorkspace.shared.selectFile(store.url.path, inFileViewerRootedAtPath: store.url.deletingLastPathComponent().path) }
     func openPrivacy(_ section: String) { if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(section)") { NSWorkspace.shared.open(url) } }
     func requestAgentPermissions() { DistributedNotificationCenter.default().postNotificationName(NSNotification.Name(ReKeyServiceIdentity.permissionNotification()), object: nil, userInfo: nil, deliverImmediately: true) }
-    func requestAccessibility() { requestAgentPermissions() }
     func requestInputMonitoring() {
         runtime.requestInputMonitoring()
         openPrivacy("Privacy_ListenEvent")

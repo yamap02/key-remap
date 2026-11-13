@@ -109,9 +109,9 @@ struct PermissionsView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("入力を扱うために、必要なアクセスを確認します。").foregroundStyle(.secondary)
                 permission("入力監視", icon: "waveform.path", status: state.inputMonitoringReady ? "許可済み" : "未許可", ready: state.inputMonitoringReady, description: "rekey-core のみ許可してください。場所は /Applications/ReKey.app/Contents/Library/HelperTools/rekey-core です。Finder で選択された rekey-core をシステム設定の入力監視リストに追加し、オンにしてください。許可後に「入力サービスを再起動」を押してください。") { state.requestInputMonitoring() }
-                permission("アクセシビリティ", icon: "accessibility", status: state.accessibility ? "許可済み" : "EventViewer 使用時のみ必要", ready: state.accessibility, description: "通常のリマップには不要です。EventViewer のパスワード欄確認にのみ使用します。必要な場合は ReKeyAgent のみ許可してください。ReKey の許可は不要です。") { state.requestAccessibility(); state.openPrivacy("Privacy_Accessibility") }
+                permission("アクセシビリティ", icon: "accessibility", status: state.accessibility ? "許可済み" : "EventViewer 使用時のみ必要", ready: state.accessibility, description: "通常のリマップには不要です。EventViewer のパスワード欄確認にのみ使用します。必要な場合は ReKeyAgent のみ許可してください。ReKey の許可は不要です。") { state.requestAgentPermissions(); state.openPrivacy("Privacy_Accessibility") }
                 permission("仮想 HID ドライバ", icon: "puzzlepiece.extension", status: state.driverActive ? "接続済み（評価用）" : "未接続", ready: state.driverActive, description: "開発版は Karabiner の公開ドライバを利用します。「確認する」で接続用デーモンも登録します。バックグラウンド項目とドライバ拡張を許可してください。") { state.setupDriver() }
-                permission("入力サービス", icon: "gearshape.2", status: state.daemonStatus, ready: state.daemonStatus == "稼働中", description: "rekey-core が入力の取得・変換・仮想 HID 出力を行います。root サービスは1つです。ReKeyAgent はユーザー権限で動作します。") { if let u = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") { NSWorkspace.shared.open(u) } }
+                permission("入力サービス", icon: "gearshape.2", status: state.daemonStatus.rawValue, ready: state.daemonStatus == .running, description: "rekey-core が入力の取得・変換・仮想 HID 出力を行います。root サービスは1つです。ReKeyAgent はユーザー権限で動作します。") { if let u = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") { NSWorkspace.shared.open(u) } }
                 HStack { Button("入力サービスを登録") { state.registerServices() }; Button("登録を解除") { state.unregisterServices() }; Button("入力サービスを再起動") { state.restartServices() } }.disabled(state.recoveringServices || state.updatePrepared || state.serviceOperationInProgress)
                 if let runtimeError = state.runtime.status?.error, !runtimeError.isEmpty { Text(runtimeError).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
                 GroupBox {
@@ -184,7 +184,7 @@ struct EventViewer: View {
                 Button("クリア", systemImage: "trash") { state.runtime.eventLog.clear() }
             }
             if !state.eventViewerReady {
-                ContentUnavailableView { Label(L(state.runtime.status == nil ? "入力サービスへの接続待ち" : state.inputMonitoringReady ? "ReKeyAgent の権限と接続を確認してください" : "入力監視の許可が必要です"), systemImage: "waveform.path") } description: { Text("通常のリマップにはアクセシビリティは不要です。EventViewer では ReKeyAgent による入力欄の安全確認が必要です。") } actions: { Button("EventViewer のアクセスを許可") { state.requestAccessibility(); state.openPrivacy("Privacy_Accessibility") }; Button("権限を確認") { state.page = .permissions; openWindow(id: "settings"); NSApp.activate(ignoringOtherApps: true) } }
+                ContentUnavailableView { Label(L(state.runtime.status == nil ? "入力サービスへの接続待ち" : state.inputMonitoringReady ? "ReKeyAgent の権限と接続を確認してください" : "入力監視の許可が必要です"), systemImage: "waveform.path") } description: { Text("通常のリマップにはアクセシビリティは不要です。EventViewer では ReKeyAgent による入力欄の安全確認が必要です。") } actions: { Button("EventViewer のアクセスを許可") { state.requestAgentPermissions(); state.openPrivacy("Privacy_Accessibility") }; Button("権限を確認") { state.page = .permissions; openWindow(id: "settings"); NSApp.activate(ignoringOtherApps: true) } }
             } else {
                 Table(log.events) {
                     TableColumn("時刻") { e in Text(String(format: "%.3f", Double(e.time_ns)/1_000_000_000)).monospacedDigit() }.width(90)
