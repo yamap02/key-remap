@@ -2,30 +2,31 @@
 set -euo pipefail
 cd "${0:A:h:h}"
 source scripts/build-config.sh
-/usr/bin/python3 scripts/check-vendored-notices.py
-scripts/build-core.sh
-scripts/build-icons.sh
-swift build -c release
-binary_dir=$(swift build -c release --show-bin-path)
-app="$PWD/build/ReKey.app"
+# Check inputs before the slow builds. Release builds are checked more strictly
+# in build-config.sh; development builds may use placeholder feed hosts.
 version="${REKEY_VERSION:-0.1.0}"
 if [[ ! "$version" =~ '^[0-9]+([.][0-9]+){1,2}$' ]]; then echo "REKEY_VERSION must be a numeric dotted version" >&2; exit 64; fi
+build_number="${REKEY_BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
+if [[ ! "$build_number" =~ '^[1-9][0-9]*$' ]]; then echo "REKEY_BUILD_NUMBER must be a positive integer without leading zeros" >&2; exit 64; fi
 if [[ -n "${REKEY_FEED_URL:-}" || -n "${REKEY_ED_PUBLIC_KEY:-}" ]]; then
   [[ -n "${REKEY_FEED_URL:-}" && -n "${REKEY_ED_PUBLIC_KEY:-}" ]] || { echo "Feed URL and EdDSA public key must be supplied together" >&2; exit 64; }
   /usr/bin/python3 - "$REKEY_FEED_URL" "$REKEY_ED_PUBLIC_KEY" <<'PYTHON'
 import base64, sys, urllib.parse
 try:
-    url = urllib.parse.urlparse(sys.argv[1])
+    url = urllib.parse.urlsplit(sys.argv[1])
     assert url.scheme == 'https' and url.hostname and not url.username and not url.password
     assert len(base64.b64decode(sys.argv[2], validate=True)) == 32
 except Exception:
     sys.exit('Invalid HTTPS feed URL or EdDSA public key')
 PYTHON
 fi
+/usr/bin/python3 scripts/check-vendored-notices.py
+scripts/build-core.sh
+scripts/build-icons.sh
+swift build -c release
+binary_dir=$(swift build -c release --show-bin-path)
+app="$PWD/build/ReKey.app"
 rm -rf "$app"
-build_number="${REKEY_BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
-case "$build_number" in ''|*[!0-9]*) echo "REKEY_BUILD_NUMBER must be a positive integer" >&2; exit 64;; esac
-if [[ "$build_number" -lt 1 ]]; then echo "REKEY_BUILD_NUMBER must be a positive integer" >&2; exit 64; fi
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$binary_dir/ReKey" "$app/Contents/MacOS/ReKey"
 cp Resources/Info.plist "$app/Contents/Info.plist"
@@ -92,14 +93,12 @@ for role, folder in [('core', 'LaunchDaemons'), ('agent', 'LaunchAgents')]:
     dest.write_bytes(plistlib.dumps(data))
 PYTHON
 codesign "${sign_args[@]}" "$agent"
-if [[ -f build/rekey-core ]]; then
-  mkdir -p "$app/Contents/Library/LaunchDaemons" "$app/Contents/Library/HelperTools"
-  cp build/rekey-core build/rekey-bench "$app/Contents/Library/HelperTools/"
-  cp Resources/jp.example.rekey.vhid.plist "$app/Contents/Library/LaunchDaemons/"
-  cp Vendor/VirtualHID/files/LaunchDaemons/org.pqrs.service.daemon.Karabiner-VirtualHIDDevice-Daemon.plist "$app/Contents/Library/LaunchDaemons/"
-  codesign "${sign_args[@]}" "$app/Contents/Library/HelperTools/rekey-core"
-  codesign "${sign_args[@]}" "$app/Contents/Library/HelperTools/rekey-bench"
-fi
+mkdir -p "$app/Contents/Library/LaunchDaemons" "$app/Contents/Library/HelperTools"
+cp build/rekey-core build/rekey-bench "$app/Contents/Library/HelperTools/"
+cp Resources/jp.example.rekey.vhid.plist "$app/Contents/Library/LaunchDaemons/"
+cp Vendor/VirtualHID/files/LaunchDaemons/org.pqrs.service.daemon.Karabiner-VirtualHIDDevice-Daemon.plist "$app/Contents/Library/LaunchDaemons/"
+codesign "${sign_args[@]}" "$app/Contents/Library/HelperTools/rekey-core"
+codesign "${sign_args[@]}" "$app/Contents/Library/HelperTools/rekey-bench"
 codesign "${sign_args[@]}" "$app"
 if [[ -n "${REKEY_TEAM_ID:-}" ]]; then
   for signed in "$app" "$agent" "$app/Contents/Library/HelperTools/rekey-core"; do
