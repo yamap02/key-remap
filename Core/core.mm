@@ -36,8 +36,8 @@ public:
     IONotificationPortRef system_port=nullptr,display_port=nullptr;
     io_connect_t power_connection=IO_OBJECT_NULL;
     io_object_t system_notifier=IO_OBJECT_NULL,display_notifier=IO_OBJECT_NULL;
-    IOHIDManagerRef manager=nullptr;std::array<Device,32> devices{};rekey::JSON config;std::string error="Configuration not loaded";uid_t uid=0;std::string config_path;time_t modified=0;long modified_ns=0;dispatch_source_t config_watch=nullptr,link_watch=nullptr;std::string watch_path;
-    rekey::VirtualHIDOutput output;uint64_t output_epoch=0;bool paused=true,viewer=false,secure=true,conflict=false,input_monitoring=false,agent_accessibility=false;uint64_t viewer_deadline=0,housekeeping=0,last_context=0,ui_deadline=0;std::array<Trace,2048> traces{};size_t trace_write=0,trace_read=0;struct PendingAction {uint32_t device;int action;};std::array<PendingAction,256> actions{};size_t action_write=0,action_read=0;rekey::Context context;
+    IOHIDManagerRef manager=nullptr;std::array<Device,32> devices{};rekey::JSON config;std::string error="Configuration not loaded";uid_t uid=0;std::string config_path;time_t modified=0;long modified_ns=0;uid_t rejected_uid=0;timespec rejected{};std::string rejected_error;dispatch_source_t config_watch=nullptr,link_watch=nullptr;std::string watch_path;
+    rekey::VirtualHIDOutput output;uint64_t output_epoch=0;bool paused=true,viewer=false,secure=true,conflict=false,input_monitoring=false,agent_accessibility=false;uint64_t viewer_deadline=0,housekeeping=0,conflict_checked=0,last_context=0,ui_deadline=0;std::array<Trace,2048> traces{};size_t trace_write=0,trace_read=0;struct PendingAction {uint32_t device;int action;};std::array<PendingAction,256> actions{};size_t action_write=0,action_read=0;rekey::Context context;
     Core(){
         manager=IOHIDManagerCreate(kCFAllocatorDefault,kIOHIDManagerOptionIndependentDevices);NSDictionary* match=@{@kIOHIDDeviceUsagePageKey:@1,@kIOHIDDeviceUsageKey:@6};IOHIDManagerSetDeviceMatching(manager,(__bridge CFDictionaryRef)match);
         IOHIDManagerRegisterDeviceMatchingCallback(manager,[](void* ctx,IOReturn,void*,IOHIDDeviceRef d){static_cast<Core*>(ctx)->add(d);},this);
@@ -82,14 +82,16 @@ public:
         for(auto& d:devices)if(!d.hid){d.hid=hid;d.name=name;CFRetain(hid);d.identity={num(CFSTR(kIOHIDVendorIDKey)),num(CFSTR(kIOHIDProductIDKey)),str(CFSTR(kIOHIDSerialNumberKey)),false,"unknown"};int keyboard_type=num(CFSTR("KeyboardType"));int country=num(CFSTR(kIOHIDCountryCodeKey));d.identity.keyboard_type=keyboard_type==42||country==15?"jis":keyboard_type==41||country==32?"iso":keyboard_type==40||country==33?"ansi":"unknown";auto built=IOHIDDeviceGetProperty(hid,CFSTR(kIOHIDBuiltInKey));d.identity.builtin=built==kCFBooleanTrue||num(CFSTR(kIOHIDBuiltInKey))!=0;compile(d);break;}
     }
     void remove(IOHIDDeviceRef hid){trace_read=trace_write;action_read=action_write;for(auto& d:devices)if(d.hid==hid){release(d);CFRelease(d.hid);d=Device();break;}}
-    void compile(Device& d){if(config.is_null())return;try{auto e=std::make_unique<rekey::Engine>(rekey::Program::compile(config,d.identity),d.identity);e->update_context(context);release(d);d.engine=std::move(e);}catch(const std::exception& e){error=e.what();paused=true;stop();}}
-    void stop(){action_read=action_write;bool seized=false;for(auto& d:devices){seized=seized||d.seized;release(d);}if(seized)output.reset();viewer=false;trace_read=trace_write;}
+    void compile(Device& d){if(config.is_null())return;try{install(d,rekey::Program::compile(config,d.identity));}catch(const std::exception& e){error=e.what();paused=true;stop();}}
+    void install(Device& d,rekey::Program program){auto e=std::make_unique<rekey::Engine>(std::move(program),d.identity);e->update_context(context);release(d);d.engine=std::move(e);}
+    // The reset releases every virtual key, so release() only clears engine state here; its sends are skipped while output is not ready.
+    void stop(){action_read=action_write;if(std::any_of(devices.begin(),devices.end(),[](const Device& d){return d.seized;}))output.reset();for(auto& d:devices)release(d);viewer=false;trace_read=trace_write;}
     void release(Device& d){if(d.seized){if(d.engine)send(d.engine->release_all(now_ms()),d);IOHIDDeviceUnscheduleFromRunLoop(d.hid,CFRunLoopGetMain(),kCFRunLoopDefaultMode);IOHIDDeviceClose(d.hid,0);d.seized=false;}}
     void send(const rekey::Outputs& out,Device& d){
         if(!output.ready())return;
         for(size_t i=0;i<out.user_action_count;++i){if(action_write-action_read==actions.size()){paused=true;output.reset();error="User action queue overflow";return;}actions[action_write++%actions.size()]={uint32_t(&d-devices.data()),out.user_actions[i]};}
         if(out.overflow){output.reset();paused=true;error="Output batch overflow; remapping paused";return;}
-        for(size_t i=0;i<out.size;++i){auto& e=out.values[i];if(!output.send(e.key,e.down)){output.reset();paused=true;error="Virtual HID output unavailable or queue overflow; remapping paused";break;}++d.outputs;}
+        for(size_t i=0;i<out.size;++i){auto& e=out.values[i];if(!output.send(e.key,e.down)){paused=true;error="Virtual HID output unavailable or queue overflow; remapping paused";break;}++d.outputs;}
     }
 
     void value(IOHIDValueRef v){
@@ -129,19 +131,23 @@ public:
         struct stat st{};if(stat(path.c_str(),&st)!=0){paused=true;error="Configuration file not found";stop();return;}
         if(st.st_uid!=console_uid||(st.st_mode&077)!=0||!S_ISREG(st.st_mode)||st.st_size>off_t(rekey::max_config_bytes)){paused=true;error="Configuration ownership, permissions or size rejected";stop();return;}
         if(uid==console_uid&&st.st_mtimespec.tv_sec==modified&&st.st_mtimespec.tv_nsec==modified_ns)return;
+        // A file that failed to parse or compile is not re-read until it changes.
+        if(rejected_uid==console_uid&&st.st_mtimespec.tv_sec==rejected.tv_sec&&st.st_mtimespec.tv_nsec==rejected.tv_nsec){error=rejected_error;return;}
+        bool read_done=false;
         try {
             int fd=open(path.c_str(),O_RDONLY|O_CLOEXEC);if(fd<0)throw std::runtime_error("Configuration open failed");struct stat opened{};if(fstat(fd,&opened)||opened.st_uid!=console_uid||opened.st_ino!=st.st_ino){close(fd);throw std::runtime_error("Configuration changed during open");}
-            std::string data(size_t(opened.st_size),'\0');auto read_count=read(fd,data.data(),data.size());close(fd);if(read_count!=ssize_t(data.size()))throw std::runtime_error("Configuration read failed");
+            std::string data(size_t(opened.st_size),'\0');auto read_count=read(fd,data.data(),data.size());close(fd);if(read_count!=ssize_t(data.size()))throw std::runtime_error("Configuration read failed");read_done=true;
             auto candidate=rekey::JSON::parse(data);
             // Validate all device programs before replacing the active configuration.
-            auto trial=rekey::Program::compile(candidate,{});for(auto& d:devices)if(d.hid)(void)rekey::Program::compile(candidate,d.identity);
+            (void)rekey::Program::compile(candidate,{});std::vector<std::pair<Device*,rekey::Program>> programs;for(auto& d:devices)if(d.hid)programs.emplace_back(&d,rekey::Program::compile(candidate,d.identity));
             stop();
             char resolved[PATH_MAX]{};if(realpath(path.c_str(),resolved)){std::string actual=resolved;actual=actual.substr(0,actual.find_last_of('/'));if(watch_path!=actual){if(config_watch)dispatch_source_cancel(config_watch);if(link_watch)dispatch_source_cancel(link_watch);config_watch=watch_directory(actual);auto original=path.substr(0,path.find_last_of('/'));link_watch=original!=actual?watch_directory(original):nullptr;watch_path=actual;}}
-            config=std::move(candidate);uid=console_uid;config_path=path;modified=st.st_mtimespec.tv_sec;modified_ns=st.st_mtimespec.tv_nsec;paused=config.at("global").value("paused",false);error="";for(auto& d:devices)if(d.hid)compile(d);
-        }catch(const std::exception& e){error=e.what(); /* Keep the last valid program and settings. */}
+            config=std::move(candidate);uid=console_uid;config_path=path;modified=st.st_mtimespec.tv_sec;modified_ns=st.st_mtimespec.tv_nsec;paused=config.at("global").value("paused",false);error="";for(auto& [d,program]:programs)install(*d,std::move(program));
+        }catch(const std::exception& e){error=e.what();if(read_done){rejected_uid=console_uid;rejected=st.st_mtimespec;rejected_error=error;} /* Keep the last valid program and settings. */}
     }
     void tick(){
-        if(now_ms()-housekeeping>=1000){housekeeping=now_ms();load();conflict=karabiner();input_monitoring=IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)==kIOHIDAccessTypeGranted;}
+        if(now_ms()-conflict_checked>=5000){conflict_checked=now_ms();conflict=karabiner();}
+        if(now_ms()-housekeeping>=1000){housekeeping=now_ms();load();input_monitoring=IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)==kIOHIDAccessTypeGranted;}
         output.heartbeat();
         if(installed_files && (!installed_files_checked || now_ms()-installed_files_checked>=100)){
             installed_files_checked=now_ms();installed_files_ok=installed_files->unchanged();
@@ -198,7 +204,7 @@ bool allowed(uid_t caller,bool require_owner){uid_t console=0;gid_t gid;CFString
 }
 - (void)reloadWithReply:(void (^)(BOOL))reply {
     uid_t caller=[NSXPCConnection currentConnection].effectiveUserIdentifier;
-    dispatch_async(dispatch_get_main_queue(), ^{if(!allowed(caller,true)){reply(NO);return;}core->modified=0;core->modified_ns=0;core->load();reply(core->error.empty());});
+    dispatch_async(dispatch_get_main_queue(), ^{if(!allowed(caller,true)){reply(NO);return;}core->modified=0;core->modified_ns=0;core->rejected_uid=0;core->load();reply(core->error.empty());});
 }
 - (void)statusWithReply:(void (^)(NSString *))reply {
     uid_t caller=[NSXPCConnection currentConnection].effectiveUserIdentifier;
