@@ -101,6 +101,14 @@ build/rekey-bench --config "$HOME/Library/Application Support/ReKey/rekey.json" 
 
 これは **変換処理単体** の p50/p99（µs）です。物理入力から dext 出力までの遅延とは異なります。`--physical` は未対応として失敗し、架空の実機計測値を返しません。
 
+物理入力から仮想キーボード出力までの遅延は、動作中の `rekey-core` が計測します。仮想キーボードを占有せずに開き、物理入力と仮想出力の HID タイムスタンプの差を記録します。10 秒ごとに、その間の p50 / p99 / 最大値（µs）と照合できなかった件数を統合ログに出します。キーの種類は記録しません。
+
+```sh
+log stream --style compact --predicate 'subsystem == "jp.example.rekey" AND category == "latency"'
+```
+
+`rekey-bench --physical` は引き続き未対応です。
+
 ## 配布署名
 
 配布用の pkg は `REKEY_RELEASE=1` を付けて作ります。付けないと開発用の経路になり、app を再ビルドして署名時刻を付けず、Team ID・Installer 署名・公証の検査も行いません。必要な変数（`REKEY_TEAM_ID`、`REKEY_UPDATE_ARCHIVE` など）と手順は [Sparkle 配布手順](docs/sparkle-distribution-ja.md) の手順 2〜5 に従ってください。
