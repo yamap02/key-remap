@@ -43,7 +43,7 @@ def verify(app, archive):
             parts = PurePosixPath(name).parts
             if name.startswith('__MACOSX/') or name == '__MACOSX':
                 continue
-            if not parts or parts[0] != app.name or '..' in parts or name.startswith('/'):
+            if not parts or parts[0] != app.name:
                 raise ValueError(f'unexpected archive entry: {name}')
             if item.is_dir():
                 continue

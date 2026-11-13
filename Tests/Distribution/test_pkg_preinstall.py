@@ -45,7 +45,10 @@ exit 2
 
     def test_absent_and_cleanly_stopped_services(self):
         self.assertEqual(self.run_script().returncode, 0)
-        self.assertEqual(self.run_script(services=['org.example.product.core', 'jp.example.rekey.core', 'jp.example.rekey.vhid']).returncode, 0)
+        services = ['org.example.product.core', 'jp.example.rekey.core', 'jp.example.rekey.vhid']
+        result = self.run_script(services=services)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.bootouts, services)
 
     def test_refuses_failed_inspection_stop_or_live_process(self):
         for kwargs in ({'failure': 'inspect'},
