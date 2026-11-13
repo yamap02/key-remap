@@ -90,3 +90,20 @@ import Foundation
     #expect(throws: (any Error).self) { try store.save(bad) }
     #expect(try Data(contentsOf: store.url) == valid)
 }
+@Test func itemIDsSurviveRoundTrip() throws {
+    var c = Configuration()
+    c.profiles[0].simple = [.init()]; c.profiles[0].layers = [.init()]; c.profiles[0].rules = [.init()]
+    let data = try c.encoded()
+    let first = try Configuration.decode(data), second = try Configuration.decode(data)
+    #expect(first == c)
+    #expect(second.activeProfile.simple[0].id == c.profiles[0].simple[0].id)
+    #expect(second.activeProfile.layers[0].id == c.profiles[0].layers[0].id)
+    #expect(second.activeProfile.rules[0].id == c.profiles[0].rules[0].id)
+}
+@Test func legacyFileWithoutItemIDsLoads() throws {
+    let legacy = #"{"schema_version":1,"global":{"thresholds_ms":{"alone":200,"held_down":500,"simultaneous":50}},"profiles":[{"name":"Default","selected":true,"simple":[{"from":{"key":"caps_lock"},"to":[{"key":"left_control"}]}],"layers":[{"name":"Nav","trigger":{"key":"spacebar"},"mode":"hold","map":{"h":"left_arrow"}}],"rules":[{"name":"Rule","manipulators":[{"type":"basic","from":{"key":"a"},"to":[{"key":"b"}]}]}]}]}"#
+    let c = try Configuration.decode(Data(legacy.utf8))
+    #expect(c.activeProfile.simple[0].to[0].key == "left_control")
+    #expect(c.activeProfile.layers[0].map["h"] == "left_arrow")
+    #expect(c.activeProfile.rules[0].name == "Rule")
+}

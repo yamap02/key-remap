@@ -65,7 +65,13 @@ public struct SimpleMapping: Codable, Identifiable, Equatable, Sendable {
     public var from: KeySpec
     public var to: [KeySpec]
     public init(from: String = "caps_lock", to: String = "left_control") { self.from = .init(from); self.to = [.init(to)] }
-    enum CodingKeys: String, CodingKey { case from, to }
+    enum CodingKeys: String, CodingKey { case id, from, to }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        from = try c.decode(KeySpec.self, forKey: .from)
+        to = try c.decode([KeySpec].self, forKey: .to)
+    }
 }
 public struct Layer: Codable, Identifiable, Equatable, Sendable {
     public var id = UUID()
@@ -74,7 +80,15 @@ public struct Layer: Codable, Identifiable, Equatable, Sendable {
     public var mode = "hold"
     public var map = ["h": "left_arrow", "j": "down_arrow", "k": "up_arrow", "l": "right_arrow"]
     public init() {}
-    enum CodingKeys: String, CodingKey { case name, trigger, mode, map }
+    enum CodingKeys: String, CodingKey { case id, name, trigger, mode, map }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try c.decode(String.self, forKey: .name)
+        trigger = try c.decode(KeySpec.self, forKey: .trigger)
+        mode = try c.decode(String.self, forKey: .mode)
+        map = try c.decode([String: String].self, forKey: .map)
+    }
 }
 public struct ComplexRule: Codable, Identifiable, Equatable, Sendable {
     public var id = UUID()
@@ -88,7 +102,13 @@ public struct ComplexRule: Codable, Identifiable, Equatable, Sendable {
             "to_if_alone": .array([.object(["key": .string("escape")])])
         ])]
     }
-    enum CodingKeys: String, CodingKey { case name, manipulators }
+    enum CodingKeys: String, CodingKey { case id, name, manipulators }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try c.decode(String.self, forKey: .name)
+        manipulators = try c.decode([JSONValue].self, forKey: .manipulators)
+    }
 }
 public struct DeviceID: Codable, Equatable, Hashable, Sendable {
     public var vendor_id: Int
