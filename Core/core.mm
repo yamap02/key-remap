@@ -83,7 +83,7 @@ public:
         for(auto& d:devices)if(d.hid==hid)return;
         for(auto& d:devices)if(!d.hid){d.hid=hid;d.name=name;CFRetain(hid);d.identity={num(CFSTR(kIOHIDVendorIDKey)),num(CFSTR(kIOHIDProductIDKey)),str(CFSTR(kIOHIDSerialNumberKey)),false,"unknown"};int keyboard_type=num(CFSTR("KeyboardType"));int country=num(CFSTR(kIOHIDCountryCodeKey));d.identity.keyboard_type=keyboard_type==42||country==15?"jis":keyboard_type==41||country==32?"iso":keyboard_type==40||country==33?"ansi":"unknown";auto built=IOHIDDeviceGetProperty(hid,CFSTR(kIOHIDBuiltInKey));d.identity.builtin=built==kCFBooleanTrue||num(CFSTR(kIOHIDBuiltInKey))!=0;compile(d);break;}
     }
-    void remove(IOHIDDeviceRef hid){trace_read=trace_write;action_read=action_write;for(auto& d:devices)if(d.hid==hid){release(d);CFRelease(d.hid);d=Device();break;}}
+    void remove(IOHIDDeviceRef hid){trace_read=trace_write;rejected_uid=0; /* A rejected device override may no longer apply. */action_read=action_write;for(auto& d:devices)if(d.hid==hid){release(d);CFRelease(d.hid);d=Device();break;}}
     void compile(Device& d){if(config.is_null())return;try{install(d,rekey::Program::compile(config,d.identity));}catch(const std::exception& e){error=e.what();paused=true;stop();}}
     void install(Device& d,rekey::Program program){auto e=std::make_unique<rekey::Engine>(std::move(program),d.identity);e->update_context(context);release(d);d.engine=std::move(e);}
     // The reset releases every virtual key, so release() only clears engine state here; its sends are skipped while output is not ready.

@@ -78,7 +78,7 @@ struct Program {
         for(auto& group:combined("rules"))for(auto& m:group.at("manipulators")) {
             if(out.rules.size()==max_rules)throw std::runtime_error("Too many manipulators (maximum "+std::to_string(max_rules)+")");
             if(m.at("type")!="basic")throw std::runtime_error("Unsupported manipulator");Rule r;r.name=group.at("name");const auto& f=m.at("from");
-            if(f.contains("simultaneous")) { for(auto& k:f.at("simultaneous")){if(r.from_count==r.from.size())throw std::runtime_error("Too many simultaneous keys (maximum "+std::to_string(r.from.size())+")");auto member=rekey::key(k.at("key"));if(std::find(r.from.begin(),r.from.begin()+r.from_count,member)!=r.from.begin()+r.from_count)throw std::runtime_error("Duplicate simultaneous key");r.from[r.from_count++]=member;}if(r.from_count<2)throw std::runtime_error("Simultaneous requires two to four keys"); }
+            if(f.contains("simultaneous")) { for(auto& k:f.at("simultaneous")){if(r.from_count==r.from.size())throw std::runtime_error("Too many simultaneous keys (maximum "+std::to_string(r.from.size())+")");auto member=rekey::key(k.at("key"));if(std::find(r.from.begin(),r.from.begin()+r.from_count,member)!=r.from.begin()+r.from_count)throw std::runtime_error("Duplicate simultaneous key");r.from[r.from_count++]=member;}if(r.from_count<2)throw std::runtime_error("Simultaneous requires two to "+std::to_string(r.from.size())+" keys"); }
             else if(f.contains("key")) {r.from[0]=rekey::key(f.at("key"));r.from_count=1;}
             else if(f.value("any",std::string())=="key_code")r.any_key=true;
             else throw std::runtime_error("Missing from key");
