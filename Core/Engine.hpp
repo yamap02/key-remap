@@ -8,9 +8,10 @@
 #include <optional>
 #include <algorithm>
 #include <cstring>
+#include <string_view>
 namespace rekey {
 using JSON = nlohmann::json;
-constexpr size_t max_actions=16, max_rules=512, max_layers=32, max_variables=64;
+constexpr size_t max_actions=16, max_rules=512, max_layers=32, max_variables=64, max_config_bytes=4*1024*1024;
 
 struct Input { Key key=0;bool down=false;uint64_t time_ms=0;uint32_t device=0; };
 struct Output { Key key=0;bool down=false;uint64_t time_ms=0;int rule=-1; };
@@ -103,6 +104,19 @@ struct Program {
         return out;
     }
 };
+// Shared by rekey-core --validate and the app: every profile must compile as if selected, without a device and for each of its device overrides.
+inline void validate_config(std::string_view data) {
+    if(data.size()>max_config_bytes)throw std::runtime_error("Configuration exceeds "+std::to_string(max_config_bytes/1024/1024)+" MiB");
+    auto config=JSON::parse(data);
+    for(size_t pi=0;pi<config.at("profiles").size();++pi) {
+        auto candidate=config;for(size_t i=0;i<candidate["profiles"].size();++i)candidate["profiles"][i]["selected"]=(i==pi);
+        (void)Program::compile(candidate,{});
+        for(const auto& device:candidate["profiles"][pi].value("devices",JSON::array())) {
+            const auto& id=device.at("id");std::string serial;if(id.contains("serial")&&!id.at("serial").is_null())serial=id.at("serial").get<std::string>();
+            (void)Program::compile(candidate,{id.at("vendor_id"),id.at("product_id"),serial});
+        }
+    }
+}
 class Engine {
     struct Press { bool down=false,alone=true,held=false,pending=false,suppressed=false,plain_emitted=false;uint8_t suppress_mask=0;Key mapped=0;uint64_t started=0;int rule=-1,layer=-1; };
     Program program_;Identity identity_;std::array<Press,max_keys> presses_{};std::array<int,max_variables> variables_{};std::bitset<max_layers> layers_;std::array<uint16_t,max_keys> output_counts_{};std::array<uint16_t,8> suppressions_{};uint8_t sticky_=0;Key sticky_owner_=0;
