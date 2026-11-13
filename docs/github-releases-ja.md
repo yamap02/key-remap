@@ -9,11 +9,36 @@ https://github.com/yamap02/key-remap/releases/latest/download/appcast.xml
 
 `scripts/github-release.py` はローカル Mac のキーチェーンを使い、署名・公証済みの初回導入 pkg、Sparkle 更新 zip、署名済み appcast を作成する。GitHub Actions へ秘密鍵を渡す必要はない。`prepare` は下書きまで、`publish` は一般公開と latest の切替まで実行する。更新方法は [Sparkle 公式手順](https://sparkle-project.org/documentation/publishing/) に従い、通常の app 更新を使う。pkg は初回導入用で、Sparkle から実行しない。
 
-2026-11-14 の確認では Release はなく、この Mac の有効なコード署名 identity は 0 件。
-署名・公証済みの配布物はまだ作成していない。実証明書での通し確認と
-[更新の実機検証](sparkle-physical-validation-ja.md) は残っている。
+## Apple Developer Program 未加入での開発版配布
 
-## 初回のみの設定
+2026-11-14、配布者の判断により、未公証の開発版を公開する方式を追加した。
+app は ad-hoc 署名、初回導入 pkg は未署名。Apple による発行者確認・公証はない。
+Sparkle の feed と zip の EdDSA 署名・改ざん検査は有効にする。
+初回導入は macOS の「システム設定 → プライバシーとセキュリティ → このまま開く」で利用者が許可する。
+OS 全体のセキュリティ設定を無効にする手順は使用しない。
+
+配布用 Sparkle 鍵はこの Mac のキーチェーン account `yamap02.key-remap.sparkle` に作成済み。
+公開鍵は `Resources/sparkle-public-key.txt` に固定し、キーチェーンの鍵と一致しなければ配布を中止する。
+秘密鍵は GitHub、Git、成果物へ含めない。
+
+未公証版では、後述の Developer ID と公証資格情報の設定を省き、各コマンドへ明示的にフラグを付ける。
+
+```sh
+python3 scripts/github-release.py prepare 0.1.0 1 --unnotarized-development
+python3 scripts/github-release.py publish 0.1.0 1 --unnotarized-development
+python3 scripts/github-release.py verify 0.1.0 1 --unnotarized-development
+```
+
+タグ・クリーンな作業ツリー・前回 feed・build・署名・pkg と zip の内容一致・公開後の照合は通常と同じ。
+このモードでは Apple の署名、公証、staple と Gatekeeper の許可判定を実行しない。
+公開時には未公証であることと SHA-256 を Release の説明へ記載する。
+通常モードの署名・公証要件は維持し、未公証への自動フォールバックは行わない。
+
+初回導入・root 所有 app の実更新・入力監視の再承認・物理キー解放は利用環境での確認が必要。
+ad-hoc 署名は更新でコードの識別情報が変わり、入力監視やバックグラウンド項目の再承認が必要になる場合がある。
+検証記録のない実機の動作を保証するものではない。
+
+## Developer ID による署名・公証版の初回設定
 
 macOS 27 / Apple Silicon、対応する Xcode / Swift、Python 3.11 以上、認証済みの `gh` CLI を使用する。
 Apple Developer Program の Developer ID Application と Developer ID Installer の証明書を、秘密鍵とともにログインキーチェーンへ登録する。
@@ -44,7 +69,7 @@ export REKEY_NOTARY_PROFILE='rekey-notary'
 製品 ID は `io.github.yamap02.ReKey`、Sparkle キーチェーン account は `yamap02.key-remap.sparkle` に固定する。
 開発版の `jp.example.rekey` からの変更に伴い、開発版を停止・解除してから製品版を導入し、バックグラウンド項目・入力監視・必要な場合のアクセシビリティを再承認する。開発版からの自動移行は対象にしない。初回製品版の配布後は ID と鍵を維持する。
 
-## リリースごとの操作
+## 共通のタグ準備とリリース操作
 
 以下の `0.1.0` と build `1` は操作例。表示版・タグは再利用せず、build は配布済みの全 build より大きな整数を指定する。
 事前に通常のテストと [実機検証](sparkle-physical-validation-ja.md) を済ませる。

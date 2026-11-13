@@ -60,7 +60,7 @@ EventViewer の表示はパスワード欄や Secure Event Input、監視状態�
 
 ## セットアップ
 
-公開版向けの初回導入・更新手順案は [インストールと更新](docs/install-update-ja.md) を参照してください。公開前の署名・公証と実機検証は未完了です。
+公開版向けの初回導入・更新手順案は [インストールと更新](docs/install-update-ja.md) を参照してください。未公証の開発版として配布します。初回の起動許可と権限設定が必要です。実機更新の確認範囲は配布ページに記載します。
 
 1. 開発用 pkg をインストールする。管理者認証は Mac の認証画面で行う。
 2. `/Applications/ReKey.app` を起動し、「権限」から入力サービスを登録する。
@@ -111,11 +111,11 @@ log stream --style compact --predicate 'subsystem == "jp.example.rekey" AND cate
 
 サブシステム名はビルド時の `REKEY_PRODUCT_ID` です（上の例は開発版の既定値）。`rekey-bench --physical` は引き続き未対応です。
 
-公開・配布の判断と運用については [インターネット公開・配布の準備](docs/public-distribution-readiness-ja.md) を参照してください。Apple Developer Program 未登録のため、製品版の署名・公証は保留です。
+公開・配布の判断と運用については [インターネット公開・配布の準備](docs/public-distribution-readiness-ja.md) を参照してください。Apple Developer Program 未登録のため、Apple の署名・公証を伴わない開発版として配布します。Sparkle の更新署名は使用します。
 
 ## 配布署名
 
-GitHub Releases と Sparkle の配布操作は [GitHub Releases 配布手順](docs/github-releases-ja.md) を参照してください。`scripts/github-release.py prepare` で署名・公証から Release 下書きの検証まで実行し、`publish` で公開できます。Developer ID 証明書と公証資格情報の設定が必要です。
+GitHub Releases と Sparkle の配布操作は [GitHub Releases 配布手順](docs/github-releases-ja.md) を参照してください。`scripts/github-release.py prepare` で署名・公証から Release 下書きの検証まで実行し、`publish` で公開できます。未公証の開発版は `--unnotarized-development` を明示して配布できます。Apple の署名・公証版には Developer ID 証明書と公証資格情報が必要です。
 
 配布用の pkg は `REKEY_RELEASE=1` を付けて作ります。付けないと開発用の経路になり、app を再ビルドして署名時刻を付けず、Team ID・Installer 署名・公証の検査も行いません。必要な変数（`REKEY_TEAM_ID`、`REKEY_UPDATE_ARCHIVE` など）と手順は [Sparkle 配布手順](docs/sparkle-distribution-ja.md) の手順 2〜5 に従ってください。
 
