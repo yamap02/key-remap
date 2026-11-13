@@ -21,7 +21,7 @@ import ServiceManagement
         .commands {
             CommandGroup(replacing: .newItem) { Button("設定を開く…") { openSettings() }.keyboardShortcut(",") }
             CommandMenu("ReKey") {
-                Button(L(state.isPaused ? "再開" : "一時停止")) { state.togglePause() }.keyboardShortcut("p", modifiers: [.control, .option, .command]).disabled(state.recoveringServices || state.updatePrepared)
+                Button(L(state.isPaused ? "再開" : "一時停止")) { state.togglePause() }.disabled(state.recoveringServices || state.updatePrepared)
                 Button("設定を再読込") { state.reload(reloadEngine: true) }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(state.recoveringServices || state.updatePrepared)
                 Button("設定をインポート…") { state.importFile() }.disabled(state.recoveringServices || state.updatePrepared)
                 Button("設定を書き出す…") { state.exportFile() }.disabled(state.recoveringServices || state.updatePrepared)

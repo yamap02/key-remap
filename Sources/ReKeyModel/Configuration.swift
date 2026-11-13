@@ -183,6 +183,23 @@ public struct Configuration: Codable, Equatable, Sendable {
     public var profiles = [Profile()]
     public init() {}
     public var activeProfile: Profile { profiles.first(where: \.selected) ?? profiles[0] }
+    /// ⌃⌥⌘ + a digit that no profile uses yet, so a newly enabled shortcut can be registered by the Agent.
+    public func unusedShortcut() -> Shortcut {
+        var candidate = Shortcut()
+        for key in "1234567890".map(String.init) {
+            candidate.key = key
+            if !profiles.contains(where: { $0.shortcut.map(Self.combination) == Self.combination(candidate) }) { return candidate }
+        }
+        return Shortcut()
+    }
+    /// True when the profile's shortcut is also used by another profile or by the Agent's ⌃⌥⌘P pause hotkey.
+    public func shortcutConflicts(profile id: String) -> Bool {
+        guard let shortcut = profiles.first(where: { $0.id == id })?.shortcut else { return false }
+        let combination = Self.combination(shortcut)
+        var pause = Shortcut(); pause.key = "p"
+        return combination == Self.combination(pause) || profiles.contains { $0.id != id && $0.shortcut.map(Self.combination) == combination }
+    }
+    private static func combination(_ shortcut: Shortcut) -> [String] { [shortcut.key] + shortcut.modifiers.sorted() }
     public mutating func select(_ id: String) { for i in profiles.indices { profiles[i].selected = profiles[i].id == id } }
     public func validated() throws -> Configuration { _ = try encoded(); return self }
     /// Validates once and returns the canonical bytes that the C++ validator also checked.

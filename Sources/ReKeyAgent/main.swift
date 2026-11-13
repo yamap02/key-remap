@@ -39,8 +39,8 @@ import ReKeyModel
             return noErr
         }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), &eventHandler)
         var ref: EventHotKeyRef?
-        RegisterEventHotKey(35, UInt32(controlKey | optionKey | cmdKey), EventHotKeyID(signature: 0x52654B79, id: 0), GetApplicationEventTarget(), 0, &ref)
-        if let ref { pauseShortcutRef = ref }
+        if RegisterEventHotKey(35, UInt32(controlKey | optionKey | cmdKey), EventHotKeyID(signature: 0x52654B79, id: 0), GetApplicationEventTarget(), 0, &ref) == noErr, let ref { pauseShortcutRef = ref }
+        else { NSLog("ReKey Agent: the pause hotkey could not be registered") }
     }
     func updateShortcuts(_ config: Configuration) {
         let wanted = Dictionary(uniqueKeysWithValues: config.profiles.compactMap { p in p.shortcut.map { (p.id, $0) } })
@@ -55,6 +55,7 @@ import ReKeyModel
             let id = UInt32(offset + 1)
             var ref: EventHotKeyRef?
             if RegisterEventHotKey(UInt32(code), mask, EventHotKeyID(signature: 0x52654B79, id: id), GetApplicationEventTarget(), 0, &ref) == noErr, let ref { shortcutRefs.append(ref); shortcutTargets[id] = item.key }
+            else { NSLog("ReKey Agent: the shortcut for profile %@ could not be registered (already in use)", item.key) }
         }
         installedShortcuts = wanted
     }

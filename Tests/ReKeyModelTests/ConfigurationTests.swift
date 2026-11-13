@@ -119,3 +119,16 @@ import Foundation
     #expect(FileManager.default.fileExists(atPath: real.appendingPathComponent("Backups").path))
     #expect(!FileManager.default.fileExists(atPath: linked.appendingPathComponent("Backups").path))
 }
+@Test func newShortcutsAvoidExistingOnes() throws {
+    var c = Configuration()
+    c.profiles[0].shortcut = Shortcut()
+    var second = Profile(name: "Second"); second.selected = false
+    c.profiles.append(second)
+    #expect(c.unusedShortcut().key == "2")
+    c.profiles[1].shortcut = c.unusedShortcut()
+    #expect(!c.shortcutConflicts(profile: c.profiles[1].id))
+    c.profiles[1].shortcut = Shortcut()
+    #expect(c.shortcutConflicts(profile: c.profiles[1].id))
+    c.profiles[1].shortcut?.key = "p"
+    #expect(c.shortcutConflicts(profile: c.profiles[1].id))
+}

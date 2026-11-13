@@ -57,7 +57,7 @@ struct ProfilesView: View {
                         TextField("プロファイル名", text: Binding(get: { p.name }, set: { state.config.profiles[i].name = $0; state.changed() })).textFieldStyle(.plain)
                         Spacer()
                         Text("\(p.simple.count) リマップ · \(p.rules.count) ルール").font(.caption).foregroundStyle(.secondary)
-                        Button("複製") { var copy = p; copy.id = UUID().uuidString; copy.name += " のコピー"; copy.selected = false; state.config.profiles.append(copy); state.changed() }
+                        Button("複製") { var copy = p; copy.id = UUID().uuidString; copy.name += " のコピー"; copy.selected = false; if copy.shortcut != nil { copy.shortcut = state.config.unusedShortcut() }; state.config.profiles.append(copy); state.changed() }
                         Button(role: .destructive) { deleting = p } label: { Image(systemName: "trash") }.disabled(state.config.profiles.count == 1)
                     }.padding(.vertical, 10)
                 }
@@ -68,9 +68,12 @@ struct ProfilesView: View {
             }
             GroupBox("キーボードショートカット · \(state.profile.name)") {
                 HStack {
-                    Toggle("⌃⌥⌘", isOn: Binding(get: { state.profile.shortcut != nil }, set: { state.config.profiles[state.profileIndex].shortcut = $0 ? .init() : nil; state.changed() }))
+                    Toggle("⌃⌥⌘", isOn: Binding(get: { state.profile.shortcut != nil }, set: { state.config.profiles[state.profileIndex].shortcut = $0 ? state.config.unusedShortcut() : nil; state.changed() }))
                     if let shortcut = state.profile.shortcut { KeyPicker(title: "ショートカットのキー", selection: Binding(get: { shortcut.key }, set: { state.config.profiles[state.profileIndex].shortcut?.key = $0; state.changed() })) }
                 }.padding(8)
+                if state.config.shortcutConflicts(profile: state.profile.id) {
+                    Label("このショートカットは他のプロファイルまたは一時停止（⌃⌥⌘P）と重複しているため使用できません。", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).padding([.horizontal, .bottom], 8)
+                }
             }
             GroupBox("自動切替 · \(state.profile.name)") {
                 VStack(alignment: .leading, spacing: 12) {
