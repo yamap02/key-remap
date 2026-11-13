@@ -25,6 +25,8 @@
 
 namespace {
 uint64_t now_ms(){return uint64_t(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)/1000000);}
+// 0 when no regular user (uid >= 501) owns the console.
+uid_t console_user(){uid_t uid=0;gid_t gid=0;CFStringRef user=SCDynamicStoreCopyConsoleUser(nullptr,&uid,&gid);if(user)CFRelease(user);return uid<501?0:uid;}
 struct Device { IOHIDDeviceRef hid=nullptr;rekey::Identity identity;std::string name;std::unique_ptr<rekey::Engine> engine;bool seized=false,muted=false;uint64_t inputs=0,outputs=0,started=0,retry_at=0,capture_started=0; };
 struct Trace {uint64_t time;uint32_t device,key,output;bool down,output_down;int rule;uint8_t input_modifiers,output_modifiers;};
 class Core {
@@ -36,8 +38,8 @@ public:
     IONotificationPortRef system_port=nullptr,display_port=nullptr;
     io_connect_t power_connection=IO_OBJECT_NULL;
     io_object_t system_notifier=IO_OBJECT_NULL,display_notifier=IO_OBJECT_NULL;
-    IOHIDManagerRef manager=nullptr;std::array<Device,32> devices{};rekey::JSON config;std::string error="Configuration not loaded";uid_t uid=0;std::string config_path;time_t modified=0;long modified_ns=0;dispatch_source_t config_watch=nullptr,link_watch=nullptr;std::string watch_path;
-    rekey::VirtualHIDOutput output;uint64_t output_epoch=0;bool paused=true,viewer=false,secure=true,conflict=false,input_monitoring=false,agent_accessibility=false;uint64_t viewer_deadline=0,housekeeping=0,last_context=0,ui_deadline=0;std::array<Trace,2048> traces{};size_t trace_write=0,trace_read=0;struct PendingAction {uint32_t device;int action;};std::array<PendingAction,256> actions{};size_t action_write=0,action_read=0;rekey::Context context;
+    IOHIDManagerRef manager=nullptr;std::array<Device,32> devices{};rekey::JSON config;std::string error="Configuration not loaded";uid_t uid=0;std::string config_path;time_t modified=0;long modified_ns=0;uid_t rejected_uid=0;timespec rejected{};std::string rejected_error;dispatch_source_t config_watch=nullptr,link_watch=nullptr;std::string watch_path;
+    rekey::VirtualHIDOutput output{REKEY_PRODUCT_ID};uint64_t output_epoch=0;bool paused=true,viewer=false,secure=true,conflict=false,input_monitoring=false,agent_accessibility=false;uint64_t viewer_deadline=0,housekeeping=0,conflict_checked=0,last_context=0,ui_deadline=0;std::array<Trace,2048> traces{};size_t trace_write=0,trace_read=0;struct PendingAction {uint32_t device;int action;};std::array<PendingAction,256> actions{};size_t action_write=0,action_read=0;rekey::Context context;
     Core(){
         manager=IOHIDManagerCreate(kCFAllocatorDefault,kIOHIDManagerOptionIndependentDevices);NSDictionary* match=@{@kIOHIDDeviceUsagePageKey:@1,@kIOHIDDeviceUsageKey:@6};IOHIDManagerSetDeviceMatching(manager,(__bridge CFDictionaryRef)match);
         IOHIDManagerRegisterDeviceMatchingCallback(manager,[](void* ctx,IOReturn,void*,IOHIDDeviceRef d){static_cast<Core*>(ctx)->add(d);},this);
@@ -81,15 +83,17 @@ public:
         for(auto& d:devices)if(d.hid==hid)return;
         for(auto& d:devices)if(!d.hid){d.hid=hid;d.name=name;CFRetain(hid);d.identity={num(CFSTR(kIOHIDVendorIDKey)),num(CFSTR(kIOHIDProductIDKey)),str(CFSTR(kIOHIDSerialNumberKey)),false,"unknown"};int keyboard_type=num(CFSTR("KeyboardType"));int country=num(CFSTR(kIOHIDCountryCodeKey));d.identity.keyboard_type=keyboard_type==42||country==15?"jis":keyboard_type==41||country==32?"iso":keyboard_type==40||country==33?"ansi":"unknown";auto built=IOHIDDeviceGetProperty(hid,CFSTR(kIOHIDBuiltInKey));d.identity.builtin=built==kCFBooleanTrue||num(CFSTR(kIOHIDBuiltInKey))!=0;compile(d);break;}
     }
-    void remove(IOHIDDeviceRef hid){trace_read=trace_write;action_read=action_write;for(auto& d:devices)if(d.hid==hid){release(d);CFRelease(d.hid);d=Device();break;}}
-    void compile(Device& d){if(config.is_null())return;try{auto e=std::make_unique<rekey::Engine>(rekey::Program::compile(config,d.identity),d.identity);e->update_context(context);release(d);d.engine=std::move(e);}catch(const std::exception& e){error=e.what();paused=true;stop();}}
-    void stop(){action_read=action_write;bool seized=false;for(auto& d:devices){seized=seized||d.seized;release(d);}if(seized)output.reset();viewer=false;trace_read=trace_write;}
+    void remove(IOHIDDeviceRef hid){trace_read=trace_write;rejected_uid=0; /* A rejected device override may no longer apply. */action_read=action_write;for(auto& d:devices)if(d.hid==hid){release(d);CFRelease(d.hid);d=Device();break;}}
+    void compile(Device& d){if(config.is_null())return;try{install(d,rekey::Program::compile(config,d.identity));}catch(const std::exception& e){error=e.what();paused=true;stop();}}
+    void install(Device& d,rekey::Program program){auto e=std::make_unique<rekey::Engine>(std::move(program),d.identity);e->update_context(context);release(d);d.engine=std::move(e);}
+    // The reset releases every virtual key, so release() only clears engine state here; its sends are skipped while output is not ready.
+    void stop(){action_read=action_write;if(std::any_of(devices.begin(),devices.end(),[](const Device& d){return d.seized;}))output.reset();for(auto& d:devices)release(d);viewer=false;trace_read=trace_write;}
     void release(Device& d){if(d.seized){if(d.engine)send(d.engine->release_all(now_ms()),d);IOHIDDeviceUnscheduleFromRunLoop(d.hid,CFRunLoopGetMain(),kCFRunLoopDefaultMode);IOHIDDeviceClose(d.hid,0);d.seized=false;}}
     void send(const rekey::Outputs& out,Device& d){
         if(!output.ready())return;
         for(size_t i=0;i<out.user_action_count;++i){if(action_write-action_read==actions.size()){paused=true;output.reset();error="User action queue overflow";return;}actions[action_write++%actions.size()]={uint32_t(&d-devices.data()),out.user_actions[i]};}
         if(out.overflow){output.reset();paused=true;error="Output batch overflow; remapping paused";return;}
-        for(size_t i=0;i<out.size;++i){auto& e=out.values[i];if(!output.send(e.key,e.down)){output.reset();paused=true;error="Virtual HID output unavailable or queue overflow; remapping paused";break;}++d.outputs;}
+        for(size_t i=0;i<out.size;++i){auto& e=out.values[i];if(!output.send(e.key,e.down)){paused=true;error="Virtual HID output unavailable or queue overflow; remapping paused";break;}++d.outputs;}
     }
 
     void value(IOHIDValueRef v){
@@ -111,7 +115,7 @@ public:
     }
 
     bool karabiner(){
-        int bytes=proc_listallpids(nullptr,0);std::vector<pid_t> pids(size_t(bytes)+32);
+        int pid_count=proc_listallpids(nullptr,0);std::vector<pid_t> pids(size_t(pid_count)+32);
         int count=proc_listallpids(pids.data(),int(pids.size()*sizeof(pid_t)));
         for(int i=0;i<count;++i){char path[PROC_PIDPATHINFO_MAXSIZE]{};if(proc_pidpath(pids[i],path,sizeof(path))>0){std::string name=path;if(name.ends_with("/Karabiner-Core-Service")||name.ends_with("/karabiner_grabber"))return true;}}
         return false;
@@ -123,25 +127,29 @@ public:
     }
     void core_load(){load();}
     void load(){
-        uid_t console_uid=0;gid_t gid=0;CFStringRef user=SCDynamicStoreCopyConsoleUser(nullptr,&console_uid,&gid);if(user)CFRelease(user);
-        if(console_uid<501){paused=true;uid=0;stop();return;}
+        uid_t console_uid=console_user();
+        if(!console_uid){paused=true;uid=0;stop();return;}
         auto pw=getpwuid(console_uid);if(!pw)return;std::string path=std::string(pw->pw_dir)+"/Library/Application Support/ReKey/rekey.json";
         struct stat st{};if(stat(path.c_str(),&st)!=0){paused=true;error="Configuration file not found";stop();return;}
-        if(st.st_uid!=console_uid||(st.st_mode&077)!=0||!S_ISREG(st.st_mode)||st.st_size>4*1024*1024){paused=true;error="Configuration ownership, permissions or size rejected";stop();return;}
+        if(st.st_uid!=console_uid||(st.st_mode&077)!=0||!S_ISREG(st.st_mode)||st.st_size>off_t(rekey::max_config_bytes)){paused=true;error="Configuration ownership, permissions or size rejected";stop();return;}
         if(uid==console_uid&&st.st_mtimespec.tv_sec==modified&&st.st_mtimespec.tv_nsec==modified_ns)return;
+        // A file that failed to parse or compile is not re-read until it changes.
+        if(rejected_uid==console_uid&&st.st_mtimespec.tv_sec==rejected.tv_sec&&st.st_mtimespec.tv_nsec==rejected.tv_nsec){error=rejected_error;return;}
+        bool read_done=false;
         try {
             int fd=open(path.c_str(),O_RDONLY|O_CLOEXEC);if(fd<0)throw std::runtime_error("Configuration open failed");struct stat opened{};if(fstat(fd,&opened)||opened.st_uid!=console_uid||opened.st_ino!=st.st_ino){close(fd);throw std::runtime_error("Configuration changed during open");}
-            std::string data(size_t(opened.st_size),'\0');auto read_count=read(fd,data.data(),data.size());close(fd);if(read_count!=ssize_t(data.size()))throw std::runtime_error("Configuration read failed");
+            std::string data(size_t(opened.st_size),'\0');auto read_count=read(fd,data.data(),data.size());close(fd);if(read_count!=ssize_t(data.size()))throw std::runtime_error("Configuration read failed");read_done=true;
             auto candidate=rekey::JSON::parse(data);
             // Validate all device programs before replacing the active configuration.
-            auto trial=rekey::Program::compile(candidate,{});for(auto& d:devices)if(d.hid)(void)rekey::Program::compile(candidate,d.identity);
+            (void)rekey::Program::compile(candidate,{});std::vector<std::pair<Device*,rekey::Program>> programs;for(auto& d:devices)if(d.hid)programs.emplace_back(&d,rekey::Program::compile(candidate,d.identity));
             stop();
             char resolved[PATH_MAX]{};if(realpath(path.c_str(),resolved)){std::string actual=resolved;actual=actual.substr(0,actual.find_last_of('/'));if(watch_path!=actual){if(config_watch)dispatch_source_cancel(config_watch);if(link_watch)dispatch_source_cancel(link_watch);config_watch=watch_directory(actual);auto original=path.substr(0,path.find_last_of('/'));link_watch=original!=actual?watch_directory(original):nullptr;watch_path=actual;}}
-            config=std::move(candidate);uid=console_uid;config_path=path;modified=st.st_mtimespec.tv_sec;modified_ns=st.st_mtimespec.tv_nsec;paused=config.at("global").value("paused",false);error="";for(auto& d:devices)if(d.hid)compile(d);
-        }catch(const std::exception& e){error=e.what(); /* Keep the last valid program and settings. */}
+            config=std::move(candidate);uid=console_uid;config_path=path;modified=st.st_mtimespec.tv_sec;modified_ns=st.st_mtimespec.tv_nsec;paused=config.at("global").value("paused",false);error="";for(auto& [d,program]:programs)install(*d,std::move(program));
+        }catch(const std::exception& e){error=e.what();if(read_done){rejected_uid=console_uid;rejected=st.st_mtimespec;rejected_error=error;} /* Keep the last valid program and settings. */}
     }
     void tick(){
-        if(now_ms()-housekeeping>=1000){housekeeping=now_ms();load();conflict=karabiner();input_monitoring=IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)==kIOHIDAccessTypeGranted;}
+        if(now_ms()-conflict_checked>=5000){conflict_checked=now_ms();conflict=karabiner();}
+        if(now_ms()-housekeeping>=1000){housekeeping=now_ms();load();input_monitoring=IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)==kIOHIDAccessTypeGranted;}
         output.heartbeat();
         if(installed_files && (!installed_files_checked || now_ms()-installed_files_checked>=100)){
             installed_files_checked=now_ms();installed_files_ok=installed_files->unchanged();
@@ -177,7 +185,7 @@ Core* core=nullptr;
 }
 
 namespace {
-bool allowed(uid_t caller,bool require_owner){uid_t console=0;gid_t gid;CFStringRef user=SCDynamicStoreCopyConsoleUser(nullptr,&console,&gid);if(user)CFRelease(user);return caller>=501&&caller==console&&(!require_owner||caller==core->uid);}
+bool allowed(uid_t caller,bool require_owner){auto console=console_user();return console&&caller==console&&(!require_owner||caller==core->uid);}
 }
 @interface Control : NSObject <ReKeyControl>
 @end
@@ -198,7 +206,7 @@ bool allowed(uid_t caller,bool require_owner){uid_t console=0;gid_t gid;CFString
 }
 - (void)reloadWithReply:(void (^)(BOOL))reply {
     uid_t caller=[NSXPCConnection currentConnection].effectiveUserIdentifier;
-    dispatch_async(dispatch_get_main_queue(), ^{if(!allowed(caller,true)){reply(NO);return;}core->modified=0;core->modified_ns=0;core->load();reply(core->error.empty());});
+    dispatch_async(dispatch_get_main_queue(), ^{if(!allowed(caller,true)){reply(NO);return;}core->modified=0;core->modified_ns=0;core->rejected_uid=0;core->load();reply(core->error.empty());});
 }
 - (void)statusWithReply:(void (^)(NSString *))reply {
     uid_t caller=[NSXPCConnection currentConnection].effectiveUserIdentifier;
@@ -221,16 +229,18 @@ bool allowed(uid_t caller,bool require_owner){uid_t console=0;gid_t gid;CFString
 @implementation Listener
 - (BOOL)listener:(NSXPCListener*)listener shouldAcceptNewConnection:(NSXPCConnection*)connection {
     (void)listener;
-    uid_t uid=connection.effectiveUserIdentifier;uid_t console=0;gid_t gid;CFStringRef u=SCDynamicStoreCopyConsoleUser(nullptr,&console,&gid);if(u)CFRelease(u);
-    if(uid<501||uid!=console||!self.requirement.length)return NO;
+    uid_t uid=connection.effectiveUserIdentifier;auto console=console_user();
+    if(!console||uid!=console||!self.requirement.length)return NO;
     [connection setCodeSigningRequirement:self.requirement];connection.exportedInterface=[NSXPCInterface interfaceWithProtocol:@protocol(ReKeyControl)];connection.exportedObject=[Control new];[connection resume];return YES;
 }
 @end
 int main(int argc,const char* argv[]){
     @autoreleasepool {
-        if(argc==3 && std::string(argv[1])=="--validate"){try{std::ifstream f(argv[2]);auto j=rekey::JSON::parse(f);auto p=rekey::Program::compile(j,{});for(auto& profile:j.at("profiles"))for(auto& d:profile.value("devices",rekey::JSON::array())){auto id=d.at("id");auto copy=j;for(auto& pp:copy["profiles"])pp["selected"]=(pp.at("id")==profile.at("id"));(void)rekey::Program::compile(copy,{id.at("vendor_id"),id.at("product_id"),id.value("serial",std::string())});}std::cout<<"Valid: "<<p.rules.size()<<" manipulators\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 65;}}
+        if(argc==3 && std::string(argv[1])=="--validate"){try{std::ifstream f(argv[2],std::ios::binary);if(!f)throw std::runtime_error("Configuration open failed");rekey::validate_config(std::string(std::istreambuf_iterator<char>(f),{}));std::cout<<"Valid\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 65;}}
         if(geteuid()!=0){std::cerr<<"rekey-core must run as root; use --validate FILE for offline validation\n";return 77;}
         umask(0077);mkdir("/var/run/rekey",0700);int lock=open("/var/run/rekey/core.lock",O_CREAT|O_RDWR|O_NOFOLLOW,0600);if(lock<0||flock(lock,LOCK_EX|LOCK_NB))return 73;
+        // The lock outlives Core so a new instance cannot seize keyboards before this one has released them.
+        {
         Core instance;core=&instance;
         // Pin clients to the installed app and Agent designated requirements. The installer owns both.
         char executable_path[PATH_MAX]{};uint32_t path_size=sizeof(executable_path);if(_NSGetExecutablePath(executable_path,&path_size)!=0)return 78;NSString* exe=[[NSString stringWithUTF8String:executable_path] stringByResolvingSymlinksInPath];
@@ -260,6 +270,7 @@ int main(int argc,const char* argv[]){
         dispatch_source_set_event_handler(interrupt,^{core->stop();CFRunLoopStop(CFRunLoopGetMain());});dispatch_resume(interrupt);
         CFRunLoopRun();
         dispatch_source_cancel(termination);dispatch_source_cancel(interrupt);
+        }
         close(lock);
     }
 }
