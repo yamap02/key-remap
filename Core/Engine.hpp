@@ -218,6 +218,17 @@ public:
         }if(hit==c.unless){r.context_enabled=false;break;}}}
     }
     Outputs release_all(uint64_t t) {Outputs out;for(size_t i=0;i<max_keys;++i)if(output_counts_[i]){Key k=key_for_slot(i);out.push(k,false,t);output_counts_[i]=0;}presses_={};layers_.reset();variables_={};suppressions_={};sticky_=0;sticky_owner_=0;emergency_start_=0;return out;}
+    static constexpr uint64_t no_deadline=UINT64_MAX;
+    // The earliest time after `now` at which tick() can change state; mirrors tick()'s conditions.
+    uint64_t next_deadline(uint64_t now)const {
+        uint64_t next=no_deadline;auto later=[&](uint64_t at){if(at>now)next=std::min(next,at);};
+        if(emergency_start_)later(emergency_start_+1000);
+        for(const auto& p:presses_){if(!p.down)continue;
+            if(p.pending){const auto mods=modifiers();for(auto ri:program_.by_key[slot(p.mapped)]){auto& r=program_.rules[ri];if(r.from_count>1&&matches(r,mods))later(p.started+r.chord_ms);}}
+            if(p.rule>=0&&!p.held&&program_.rules[p.rule].held.size)later(p.started+program_.rules[p.rule].held_ms);
+        }
+        return next;
+    }
     Outputs tick(uint64_t t) {
         Outputs out;
         if(emergency_start_ && t-emergency_start_>=1000){out=release_all(t);paused_=true;emergency_start_=0;return out;}

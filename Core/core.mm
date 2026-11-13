@@ -65,6 +65,8 @@ public:
     IOHIDDeviceRef virtual_keyboard=nullptr;rekey::LatencyProbe latency;os_log_t latency_log=os_log_create(REKEY_PRODUCT_ID,"latency");uint64_t latency_logged=0;
     // Refreshed off the main thread so input callbacks never wait on IPC.
     uid_t session_uid=0;std::string session_config;dispatch_queue_t probe_queue=nullptr;dispatch_source_t probe_timer=nullptr;
+    // Fires exactly at the next chord, held-down or emergency deadline instead of polling.
+    dispatch_source_t engine_timer=nullptr;uint64_t armed_deadline=rekey::Engine::no_deadline;
     rekey::VirtualHIDOutput output{REKEY_PRODUCT_ID};uint64_t output_epoch=0;bool paused=true,viewer=false,secure=true,conflict=false,input_monitoring=false,agent_accessibility=false;uint64_t viewer_deadline=0,housekeeping=0,last_context=0,ui_deadline=0;std::array<Trace,2048> traces{};size_t trace_write=0,trace_read=0;struct PendingAction {uint32_t device;int action;};std::array<PendingAction,256> actions{};size_t action_write=0,action_read=0;rekey::Context context;
     Core(){
         manager=IOHIDManagerCreate(kCFAllocatorDefault,kIOHIDManagerOptionIndependentDevices);NSDictionary* match=@{@kIOHIDDeviceUsagePageKey:@1,@kIOHIDDeviceUsageKey:@6};IOHIDManagerSetDeviceMatching(manager,(__bridge CFDictionaryRef)match);
@@ -98,9 +100,13 @@ public:
         dispatch_source_set_timer(probe_timer,dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC),NSEC_PER_SEC,100*NSEC_PER_MSEC);
         dispatch_source_set_event_handler(probe_timer,^{auto s=probe_session(++rounds%5==0);dispatch_async(dispatch_get_main_queue(),^{apply(s);});});
         dispatch_resume(probe_timer);
+        engine_timer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,DISPATCH_TIMER_STRICT,dispatch_get_main_queue());
+        dispatch_source_set_event_handler(engine_timer,^{run_engine_timers();});
+        dispatch_source_set_timer(engine_timer,DISPATCH_TIME_FOREVER,DISPATCH_TIME_FOREVER,0);
+        dispatch_resume(engine_timer);
     }
     void apply(const SessionProbe& s){session_uid=s.uid;session_config=s.config_path;input_monitoring=s.input_monitoring;if(s.conflict)conflict=*s.conflict;}
-    ~Core(){if(probe_timer)dispatch_source_cancel(probe_timer);if(system_notifier)IODeregisterForSystemPower(&system_notifier);if(power_connection)IOServiceClose(power_connection);if(display_notifier)IOObjectRelease(display_notifier);if(system_port)IONotificationPortDestroy(system_port);if(display_port)IONotificationPortDestroy(display_port);if(virtual_keyboard){IOHIDDeviceClose(virtual_keyboard,0);CFRelease(virtual_keyboard);}if(config_watch)dispatch_source_cancel(config_watch);if(link_watch)dispatch_source_cancel(link_watch);stop();IOHIDManagerClose(manager,0);CFRelease(manager);}
+    ~Core(){if(probe_timer)dispatch_source_cancel(probe_timer);if(engine_timer)dispatch_source_cancel(engine_timer);if(system_notifier)IODeregisterForSystemPower(&system_notifier);if(power_connection)IOServiceClose(power_connection);if(display_notifier)IOObjectRelease(display_notifier);if(system_port)IONotificationPortDestroy(system_port);if(display_port)IONotificationPortDestroy(display_port);if(virtual_keyboard){IOHIDDeviceClose(virtual_keyboard,0);CFRelease(virtual_keyboard);}if(config_watch)dispatch_source_cancel(config_watch);if(link_watch)dispatch_source_cancel(link_watch);stop();IOHIDManagerClose(manager,0);CFRelease(manager);}
     void power_changed(bool changed){
         if(!changed)return;
         stop();
@@ -149,7 +155,26 @@ public:
         bool down=IOHIDValueGetIntegerValue(v)!=0;if(d->inputs++==0)d->started=now_ms();
         auto out=d->engine->process({key,down,now_ms(),uint32_t(d-devices.data())});send(out,*d);
         if(virtual_keyboard){auto input_ns=hid_ns(v);for(size_t i=0;i<out.size;++i)latency.sent(out.values[i].key,out.values[i].down,input_ns);}
+        arm_engine_timer();
         record(key,down,out,*d);
+    }
+    void arm_engine_timer(){
+        auto now=now_ms();uint64_t next=rekey::Engine::no_deadline;
+        for(auto& d:devices)if(d.seized&&d.engine&&!d.muted)next=std::min(next,d.engine->next_deadline(now));
+        if(next==armed_deadline)return;armed_deadline=next;
+        if(next==rekey::Engine::no_deadline){dispatch_source_set_timer(engine_timer,DISPATCH_TIME_FOREVER,DISPATCH_TIME_FOREVER,0);return;}
+        // now_ms() reads CLOCK_UPTIME_RAW, the clock dispatch_time() counts from.
+        uint64_t at=next*1'000'000,current=clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+        dispatch_source_set_timer(engine_timer,dispatch_time(DISPATCH_TIME_NOW,int64_t(at>current?at-current:0)),DISPATCH_TIME_FOREVER,0);
+    }
+    void run_engine_timers(){
+        armed_deadline=rekey::Engine::no_deadline;auto t=now_ms();
+        for(auto& d:devices){if(!d.seized||!d.engine||d.muted)continue;
+            auto timed=d.engine->tick(t);send(timed,d);if(timed.size)record(0,false,timed,d);
+            if(d.engine->paused()){paused=true;error="Emergency stop activated";}
+        }
+        if(paused)stop();
+        arm_engine_timer();
     }
     void observed(IOHIDValueRef v){if(auto key=hid_key(v))latency.observed(key,IOHIDValueGetIntegerValue(v)!=0,hid_ns(v));}
     void log_latency(){
@@ -207,7 +232,6 @@ public:
             if(d.engine->paused()){paused=true;error="Emergency stop activated";break;}
             bool mute=disable_builtin&&d.identity.builtin;if(mute&&!d.muted)send(d.engine->release_all(now_ms()),d);d.muted=mute;
             if(d.muted)continue;
-            auto timed=d.engine->tick(now_ms());send(timed,d);if(timed.size)record(0,false,timed,d);
             if(d.inputs&&d.outputs==0&&now_ms()-d.started>10000){paused=true;error="Failsafe: no output for ten seconds";break;}
         }
         if(paused)stop();
