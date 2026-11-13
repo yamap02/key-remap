@@ -184,7 +184,9 @@ public struct Configuration: Codable, Equatable, Sendable {
     public init() {}
     public var activeProfile: Profile { profiles.first(where: \.selected) ?? profiles[0] }
     public mutating func select(_ id: String) { for i in profiles.indices { profiles[i].selected = profiles[i].id == id } }
-    public func validated() throws -> Configuration {
+    public func validated() throws -> Configuration { _ = try encoded(); return self }
+    /// Validates once and returns the canonical bytes that the C++ validator also checked.
+    public func encoded() throws -> Data {
         guard schema_version == 1 else { throw ConfigError.invalid("対応していない schema_version: \(schema_version)") }
         guard !profiles.isEmpty else { throw ConfigError.invalid("プロファイルは最低 1 つ必要です。") }
         guard Set(profiles.map(\.id)).count == profiles.count else { throw ConfigError.invalid("プロファイル ID が重複しています。") }
@@ -199,12 +201,12 @@ public struct Configuration: Codable, Equatable, Sendable {
             for d in p.devices { guard ["auto", "ansi", "iso", "jis"].contains(d.keyboard_type) else { throw ConfigError.invalid("キーボード種別が無効です。") }; try Self.validate(simple: d.simple, layers: d.layers, rules: d.rules) }
             for pattern in p.auto_select.frontmost_app { _ = try NSRegularExpression(pattern: pattern) }
         }
-        let encoder = JSONEncoder()
-        let data = try encoder.encode(self)
+        let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        var data = try e.encode(self); data.append(10)
         var message = [CChar](repeating: 0, count: 2048)
         let valid = data.withUnsafeBytes { bytes in rekey_validate_json(bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count, &message, message.count) }
         guard valid == 1 else { throw ConfigError.invalid(String(decoding: message.prefix(while: { $0 != 0 }).map { UInt8(bitPattern: $0) }, as: UTF8.self)) }
-        return self
+        return data
     }
     private static func validate(simple: [SimpleMapping], layers: [Layer], rules: [ComplexRule]) throws {
         for s in simple {
@@ -222,11 +224,6 @@ public struct Configuration: Codable, Equatable, Sendable {
         }
     }
     public static func decode(_ data: Data) throws -> Configuration { try JSONDecoder().decode(Self.self, from: data).validated() }
-    public func encoded() throws -> Data {
-        _ = try validated()
-        let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        var d = try e.encode(self); d.append(10); return d
-    }
 }
 public enum ConfigError: LocalizedError {
     case invalid(String)

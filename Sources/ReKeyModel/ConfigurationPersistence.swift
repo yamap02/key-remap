@@ -19,32 +19,26 @@ public struct ConfigurationStore: Sendable {
     public var resolvedURL: URL { url.resolvingSymlinksInPath() }
     public func load() throws -> Configuration { try snapshot().configuration }
     public func snapshot() throws -> ConfigurationSnapshot { try read(at: resolvedURL) }
-    public func save(_ config: Configuration) throws {
-        _ = try withLock { target in try commit(config, at: target, previous: read(at: target).data) }
-    }
     /// Merge the editor's delta with the current file while holding the same lock as the Agent.
     public func save(_ config: Configuration, basedOn baseline: Data?) throws -> ConfigurationSnapshot {
         try withLock { target in
             let latest = try read(at: target)
             let proposed = try config.encoded()
-            let merged: Configuration
-            if latest.data == baseline { merged = config }
-            else {
-                guard let baseline, let current = latest.data else { throw ConfigurationConflict.changed("rekey.json") }
-                let decoder = JSONDecoder()
-                let base = try decoder.decode(JSONValue.self, from: baseline)
-                let desired = try decoder.decode(JSONValue.self, from: proposed)
-                let disk = try decoder.decode(JSONValue.self, from: current)
-                func selected(_ value: JSONValue) -> String? {
-                    value["profiles"]?.array?.first { $0["selected"] == .bool(true) }?["id"]?.string
-                }
-                if selected(base) != selected(desired), selected(base) != selected(disk), selected(desired) != selected(disk) {
-                    throw ConfigurationConflict.changed("profiles.selected")
-                }
-                let value = try Self.merge(base: base, desired: desired, current: disk, path: "root")
-                merged = try Configuration.decode(JSONEncoder().encode(value))
+            if latest.data == baseline { return try commit(config, encoded: proposed, at: target, previous: latest.data) }
+            guard let baseline, let current = latest.data else { throw ConfigurationConflict.changed("rekey.json") }
+            let decoder = JSONDecoder()
+            let base = try decoder.decode(JSONValue.self, from: baseline)
+            let desired = try decoder.decode(JSONValue.self, from: proposed)
+            let disk = try decoder.decode(JSONValue.self, from: current)
+            func selected(_ value: JSONValue) -> String? {
+                value["profiles"]?.array?.first { $0["selected"] == .bool(true) }?["id"]?.string
             }
-            return try commit(merged, at: target, previous: latest.data)
+            if selected(base) != selected(desired), selected(base) != selected(disk), selected(desired) != selected(disk) {
+                throw ConfigurationConflict.changed("profiles.selected")
+            }
+            let value = try Self.merge(base: base, desired: desired, current: disk, path: "root")
+            let merged = try decoder.decode(Configuration.self, from: JSONEncoder().encode(value))
+            return try commit(merged, encoded: merged.encoded(), at: target, previous: latest.data)
         }
     }
     /// Read, mutate and commit in one transaction so profile/shortcut changes never overwrite UI edits.
@@ -53,7 +47,7 @@ public struct ConfigurationStore: Sendable {
             let latest = try read(at: target)
             var config = latest.configuration
             try edit(&config)
-            return try commit(config, at: target, previous: latest.data)
+            return try commit(config, encoded: config.encoded(), at: target, previous: latest.data)
         }
     }
     private func read(at target: URL) throws -> ConfigurationSnapshot {
@@ -104,11 +98,11 @@ public struct ConfigurationStore: Sendable {
         guard resolvedURL == target else { throw ConfigurationConflict.changed("symlink") }
         return try operation(target)
     }
-    private func commit(_ config: Configuration, at target: URL, previous: Data?) throws -> ConfigurationSnapshot {
-        let data = try config.encoded()
-        if let previous, let old = try? Configuration.decode(previous), try old.encoded() == data { return .init(configuration: config, data: previous) }
+    /// `data` must come from `config.encoded()`, which already validated it.
+    private func commit(_ config: Configuration, encoded data: Data, at target: URL, previous: Data?) throws -> ConfigurationSnapshot {
+        if previous == data { return .init(configuration: config, data: previous) }
         let fm = FileManager.default
-        let backups = url.deletingLastPathComponent().appendingPathComponent("Backups")
+        let backups = target.deletingLastPathComponent().appendingPathComponent("Backups")
         if let previous {
             try fm.createDirectory(at: backups, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

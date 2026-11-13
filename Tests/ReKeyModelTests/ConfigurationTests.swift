@@ -25,7 +25,7 @@ import Foundation
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let store = ConfigurationStore(url: root.appendingPathComponent("rekey.json"))
-    for i in 0..<24 { var c = Configuration(); c.profiles[0].name = "Profile \(i)"; try store.save(c) }
+    for i in 0..<24 { var c = Configuration(); c.profiles[0].name = "Profile \(i)"; try store.update { $0 = c } }
     #expect(try store.load().activeProfile.name == "Profile 23")
     #expect(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("Backups").path).count == 20)
     let attrs = try FileManager.default.attributesOfItem(atPath: store.url.path)
@@ -36,10 +36,10 @@ import Foundation
     defer { try? FileManager.default.removeItem(at: root) }
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let target = root.appendingPathComponent("cloud.json"), link = root.appendingPathComponent("rekey.json")
-    try ConfigurationStore(url: target).save(.init())
+    try ConfigurationStore(url: target).update { $0 = .init() }
     try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
     var c = Configuration(); c.profiles[0].name = "Cloud"
-    try ConfigurationStore(url: link).save(c)
+    try ConfigurationStore(url: link).update { $0 = c }
     #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == target.path)
     #expect(try ConfigurationStore(url: target).load().activeProfile.name == "Cloud")
 }
@@ -84,10 +84,10 @@ import Foundation
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let store = ConfigurationStore(url: root.appendingPathComponent("rekey.json"))
-    try store.save(.init())
+    try store.update { $0 = .init() }
     let valid = try Data(contentsOf: store.url)
     var bad = Configuration(); bad.profiles[0].simple = [.init(from: "not_a_key", to: "a")]
-    #expect(throws: (any Error).self) { try store.save(bad) }
+    #expect(throws: (any Error).self) { try store.update { $0 = bad } }
     #expect(try Data(contentsOf: store.url) == valid)
 }
 @Test func itemIDsSurviveRoundTrip() throws {
@@ -106,4 +106,16 @@ import Foundation
     #expect(c.activeProfile.simple[0].to[0].key == "left_control")
     #expect(c.activeProfile.layers[0].map["h"] == "left_arrow")
     #expect(c.activeProfile.rules[0].name == "Rule")
+}
+@Test func backupsLiveNextToTheResolvedTarget() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let real = root.appendingPathComponent("real"), linked = root.appendingPathComponent("linked")
+    for dir in [real, linked] { try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) }
+    let target = real.appendingPathComponent("rekey.json"), link = linked.appendingPathComponent("rekey.json")
+    try ConfigurationStore(url: target).update { $0 = .init() }
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+    try ConfigurationStore(url: link).update { $0.profiles[0].name = "Changed" }
+    #expect(FileManager.default.fileExists(atPath: real.appendingPathComponent("Backups").path))
+    #expect(!FileManager.default.fileExists(atPath: linked.appendingPathComponent("Backups").path))
 }
