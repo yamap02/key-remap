@@ -12,7 +12,7 @@ int main(int argc,const char* argv[]){
             else if(arg=="--vendor"&&i+1<argc)identity.vendor=std::stoi(argv[++i]);
             else if(arg=="--product"&&i+1<argc)identity.product=std::stoi(argv[++i]);
             else if(arg=="--physical"){std::cerr<<"Physical-to-virtual measurement requires an installed, authorized driver and physical input. This offline benchmark cannot report that latency.\n";return 69;}
-            else {std::cerr<<"Usage: rekey-bench [--config FILE] [--events COUNT] [--vendor ID --product ID]\n";return 64;}
+            else {std::cerr<<"Usage: rekey-bench [--config FILE] [--events COUNT] [--vendor ID --product ID] [--physical]\n";return 64;}
         }
         if(count<100||count>10000000)throw std::runtime_error("Event count must be 100...10000000");
         auto program=rekey::Program::compile(config,identity);auto rule_count=program.rules.size();rekey::Engine engine(std::move(program),identity);engine.update_context({});

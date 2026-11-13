@@ -12,6 +12,7 @@ class VirtualHIDOutput {
     std::atomic<bool> driver_ready{false},accepting{false},running{true};
     std::atomic<uint64_t> generation{1},heartbeat_ns{0};
     std::counting_semaphore<> wake{0};
+    os_log_t log;
     std::thread worker;
     static uint64_t now() { return clock_gettime_nsec_np(CLOCK_UPTIME_RAW); }
 
@@ -26,7 +27,6 @@ class VirtualHIDOutput {
     void run() {
         namespace service=pqrs::karabiner::driverkit::virtual_hid_device_service;
         service::client client;
-        auto log=os_log_create("jp.example.rekey","virtual-hid");
         client.connected.connect([&] {
             service::virtual_hid_keyboard_parameters p;
             p.set_country_code(pqrs::hid::country_code::us);
@@ -72,7 +72,7 @@ class VirtualHIDOutput {
         // virtual device even if an async reset has not been delivered yet.
     }
 public:
-    VirtualHIDOutput() {
+    explicit VirtualHIDOutput(const char* subsystem):log(os_log_create(subsystem,"virtual-hid")) {
         pqrs::dispatcher::extra::initialize_shared_dispatcher();
         worker=std::thread([this] { run(); });
     }
