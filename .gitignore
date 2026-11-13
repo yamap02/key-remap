@@ -6,6 +6,10 @@ DerivedData/
 *.xcarchive/
 *.dSYM/
 
+# Keep only the official driver installer used by the current setup instructions.
+/Vendor/VirtualHID/dist/*.pkg
+!/Vendor/VirtualHID/dist/Karabiner-DriverKit-VirtualHIDDevice-8.6.0.pkg
+
 # Xcode user-specific settings
 xcuserdata/
 *.xcuserstate
