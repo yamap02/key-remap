@@ -150,7 +150,7 @@ class Engine {
             if(r.from_count>1) {
                 if(!allow_chord)continue;
                 std::array<size_t,4> members{};size_t count=0;uint64_t first=t,last=0;
-                for(size_t k=0;k<r.from_count;++k)for(size_t n=0;n<presses_.size();++n){auto& q=presses_[n];if(q.down&&q.mapped==r.from[k]&&q.rule<0&&!q.suppressed&&q.layer<0){members[count++]=n;first=std::min(first,q.started);last=std::max(last,q.started);break;}}
+                for(size_t k=0;k<r.from_count;++k)for(size_t n=0;n<presses_.size();++n){auto& q=presses_[n];if(q.down&&q.mapped==r.from[k]&&q.rule<0&&!q.suppressed&&!q.plain_emitted&&q.layer<0){members[count++]=n;first=std::min(first,q.started);last=std::max(last,q.started);break;}}
                 if(count==r.from_count && last-first<=r.chord_ms) {
                     for(size_t k=0;k<count;++k){auto& q=presses_[members[k]];q.pending=false;q.suppressed=true;q.rule=-1;}
                     p.suppressed=false;activate(i,index,t,out);return true;
