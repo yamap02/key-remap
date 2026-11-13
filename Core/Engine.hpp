@@ -70,13 +70,13 @@ struct Program {
             if(out.layers.size()==max_layers)throw std::runtime_error("Too many layers");
             auto name=l.at("name").get<std::string>();if(std::any_of(out.layers.begin(),out.layers.end(),[&](auto& x){return x.name==name;}))continue;
             LayerMap lm;lm.name=name;lm.trigger=rekey::key(l.at("trigger").at("key"));auto mode=l.at("mode").get<std::string>();if(mode!="hold" && mode!="toggle")throw std::runtime_error("Invalid layer mode");lm.toggle=mode=="toggle";
-            for(auto i=l.at("map").begin();i!=l.at("map").end();++i)lm.map[slot(rekey::key(i.key()))]=rekey::key(i.value());out.layers.push_back(lm);
+            for(auto i=l.at("map").begin();i!=l.at("map").end();++i){auto k=slot(rekey::key(i.key()));if(k==max_keys)throw std::runtime_error("Key outside supported range");lm.map[k]=rekey::key(i.value());}out.layers.push_back(lm);
         }
         auto thresholds=config.at("global").at("thresholds_ms");out.layer_tap_ms=thresholds.at("alone");
         for(auto& group:combined("rules"))for(auto& m:group.at("manipulators")) {
             if(out.rules.size()==max_rules)throw std::runtime_error("Too many manipulators");
             if(m.at("type")!="basic")throw std::runtime_error("Unsupported manipulator");Rule r;r.name=group.at("name");auto f=m.at("from");
-            if(f.contains("simultaneous")) { for(auto& k:f.at("simultaneous")){if(r.from_count==4)throw std::runtime_error("Maximum four simultaneous keys");r.from[r.from_count++]=rekey::key(k.at("key"));}if(r.from_count<2)throw std::runtime_error("Simultaneous requires two to four keys"); }
+            if(f.contains("simultaneous")) { for(auto& k:f.at("simultaneous")){if(r.from_count==4)throw std::runtime_error("Maximum four simultaneous keys");auto member=rekey::key(k.at("key"));if(std::find(r.from.begin(),r.from.begin()+r.from_count,member)!=r.from.begin()+r.from_count)throw std::runtime_error("Duplicate simultaneous key");r.from[r.from_count++]=member;}if(r.from_count<2)throw std::runtime_error("Simultaneous requires two to four keys"); }
             else if(f.contains("key")) {r.from[0]=rekey::key(f.at("key"));r.from_count=1;}
             else if(f.value("any",std::string())=="key_code")r.any_key=true;
             else throw std::runtime_error("Missing from key");

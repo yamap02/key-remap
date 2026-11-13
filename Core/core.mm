@@ -232,6 +232,8 @@ int main(int argc,const char* argv[]){
         if(argc==3 && std::string(argv[1])=="--validate"){try{std::ifstream f(argv[2],std::ios::binary);if(!f)throw std::runtime_error("Configuration open failed");rekey::validate_config(std::string(std::istreambuf_iterator<char>(f),{}));std::cout<<"Valid\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 65;}}
         if(geteuid()!=0){std::cerr<<"rekey-core must run as root; use --validate FILE for offline validation\n";return 77;}
         umask(0077);mkdir("/var/run/rekey",0700);int lock=open("/var/run/rekey/core.lock",O_CREAT|O_RDWR|O_NOFOLLOW,0600);if(lock<0||flock(lock,LOCK_EX|LOCK_NB))return 73;
+        // The lock outlives Core so a new instance cannot seize keyboards before this one has released them.
+        {
         Core instance;core=&instance;
         // Pin clients to the installed app and Agent designated requirements. The installer owns both.
         char executable_path[PATH_MAX]{};uint32_t path_size=sizeof(executable_path);if(_NSGetExecutablePath(executable_path,&path_size)!=0)return 78;NSString* exe=[[NSString stringWithUTF8String:executable_path] stringByResolvingSymlinksInPath];
@@ -261,6 +263,7 @@ int main(int argc,const char* argv[]){
         dispatch_source_set_event_handler(interrupt,^{core->stop();CFRunLoopStop(CFRunLoopGetMain());});dispatch_resume(interrupt);
         CFRunLoopRun();
         dispatch_source_cancel(termination);dispatch_source_cancel(interrupt);
+        }
         close(lock);
     }
 }
