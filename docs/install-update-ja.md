@@ -12,7 +12,7 @@
    /Applications/.Karabiner-VirtualHIDDevice-Manager.app/Contents/MacOS/Karabiner-VirtualHIDDevice-Manager activate
    ```
 
-4. 公開先が決まったら、ReKey の GitHub Releases から初回導入用の署名・公証済み pkg を入手し、開いて画面に従います。管理者認証は macOS の画面で行います。**現時点では公開先も公開用 pkg もありません。**
+4. [ReKey の GitHub Releases](https://github.com/yamap02/key-remap/releases) から初回導入用の署名・公証済み pkg を入手し、開いて画面に従います。管理者認証は macOS の画面で行います。**公開リポジトリはありますが、署名・公証済みの公開用 pkg はまだありません。**
 5. アプリケーションフォルダから ReKey を開き、「権限」画面の「入力サービスを登録」を押します。システム設定のバックグラウンド項目で ReKey のサービスと共有 Virtual HID デーモンを許可します。ReKey が共有デーモンを登録するため、公式の開発者向け手順にあるデーモンのターミナル常駐起動は不要です。
 6. 「権限」画面で入力監視を確認し、必要なら Finder に表示される `rekey-core` をシステム設定の入力監視に追加・許可して「入力サービスを再起動」を押します。EventViewer を使う場合は ReKey Agent のアクセシビリティも許可します。macOS が追加の承認や再起動を求める場合は指示に従ってください。
 7. ReKey の画面でドライバと入力サービスの状態を確認し、簡単なキー変換を設定して、テキスト欄で押下と解放を確認します。入力できなくなった場合は別の入力手段で ReKey のサービスを停止します。

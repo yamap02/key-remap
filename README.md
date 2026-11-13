@@ -115,6 +115,8 @@ log stream --style compact --predicate 'subsystem == "jp.example.rekey" AND cate
 
 ## 配布署名
 
+GitHub Releases と Sparkle の配布操作は [GitHub Releases 配布手順](docs/github-releases-ja.md) を参照してください。`scripts/github-release.py prepare` で署名・公証から Release 下書きの検証まで実行し、`publish` で公開できます。Developer ID 証明書と公証資格情報の設定が必要です。
+
 配布用の pkg は `REKEY_RELEASE=1` を付けて作ります。付けないと開発用の経路になり、app を再ビルドして署名時刻を付けず、Team ID・Installer 署名・公証の検査も行いません。必要な変数（`REKEY_TEAM_ID`、`REKEY_UPDATE_ARCHIVE` など）と手順は [Sparkle 配布手順](docs/sparkle-distribution-ja.md) の手順 2〜5 に従ってください。
 
 ```sh
