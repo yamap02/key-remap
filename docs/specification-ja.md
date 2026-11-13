@@ -208,11 +208,11 @@ Karabiner-Elements の karabiner.json を読み、simple_modifications / complex
 同期
 ファイルを iCloud Drive 配下に置いた場合も動作するよう、シンボリックリンク先を解決して監視する（専用同期機構は持たない）
 6.1 ルート構造
+（現行の実装では simple / layers / rules の各要素にも編集用の "id" を保存する。ログイン時起動は JSON ではなく SMAppService の状態で管理する）
 {
   "schema_version": 1,
   "global": {
     "check_for_updates": true,
-    "show_in_menu_bar": true,
     "disable_on_quit": true,
     "thresholds_ms": { "alone": 200, "held_down": 500, "simultaneous": 50 }
   },
