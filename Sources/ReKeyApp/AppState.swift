@@ -259,8 +259,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
     private func updateServiceOperations() -> UpdateServiceRecovery.Operations {
         if let updateOperationsOverride { return updateOperationsOverride }
-        let services = ["core": SMAppService.daemon(plistName: ReKeyServiceIdentity.coreName() + ".plist"),
-                        "agent": SMAppService.agent(plistName: ReKeyServiceIdentity.agentName() + ".plist")]
+        let services = ["core": Self.coreService, "agent": Self.agentService]
         return UpdateServiceRecovery.Operations(
             status: { name in
                 guard let service = services[name] else { return .unavailable }
@@ -347,15 +346,19 @@ enum SettingsPage: String, CaseIterable, Identifiable {
             }
         }
     }
+    private static var coreService: SMAppService { .daemon(plistName: ReKeyServiceIdentity.coreName() + ".plist") }
+    private static var agentService: SMAppService { .agent(plistName: ReKeyServiceIdentity.agentName() + ".plist") }
+    /// The development-era output daemon, replaced by rekey-core.
+    private static var legacyOutputService: SMAppService { .daemon(plistName: "jp.example.rekey.vhid.plist") }
     private func retireLegacyOutputService() async throws {
-        let legacy = SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist")
+        let legacy = Self.legacyOutputService
         if legacy.status == .notFound { try? await legacy.unregister() }
         else if legacy.status != .notRegistered { try await legacy.unregister() }
     }
     private func registerCurrentServices() async {
         var services = [
-            ("rekey-core", SMAppService.daemon(plistName: ReKeyServiceIdentity.coreName() + ".plist")),
-            ("ReKey Agent", SMAppService.agent(plistName: ReKeyServiceIdentity.agentName() + ".plist"))
+            ("rekey-core", Self.coreService),
+            ("ReKey Agent", Self.agentService)
         ]
         if FileManager.default.isExecutableFile(atPath: driverDaemonPath) {
             services.insert(("Virtual HID Daemon", SMAppService.daemon(plistName: "org.pqrs.service.daemon.Karabiner-VirtualHIDDevice-Daemon.plist")), at: 0)
@@ -387,8 +390,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
     private func stopServices() throws {
         // The official Virtual HID daemon is shared with other clients; keep it registered.
-        let services = [SMAppService.daemon(plistName: ReKeyServiceIdentity.coreName() + ".plist"), SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist"), SMAppService.agent(plistName: ReKeyServiceIdentity.agentName() + ".plist")]
-        for service in services where service.status != .notRegistered && service.status != .notFound { try service.unregister() }
+        for service in [Self.coreService, Self.legacyOutputService, Self.agentService] where service.status != .notRegistered && service.status != .notFound { try service.unregister() }
     }
     func restartServices() {
         guard !recoveringServices, !updatePrepared, !serviceOperationInProgress else { return }
@@ -396,13 +398,15 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         Task {
             defer { serviceOperationInProgress = false }
             do {
-                let services = [SMAppService.daemon(plistName: ReKeyServiceIdentity.coreName() + ".plist"), SMAppService.daemon(plistName: "jp.example.rekey.vhid.plist"), SMAppService.agent(plistName: ReKeyServiceIdentity.agentName() + ".plist")]
                 // The async overload waits for the old process to exit before re-registering.
-                for service in services where service.status != .notRegistered && service.status != .notFound {
+                for service in [Self.coreService, Self.agentService] where service.status != .notRegistered && service.status != .notFound {
                     try await service.unregister()
                 }
-                await registerCurrentServices()
-            } catch { self.error = error.localizedDescription }
+            } catch { self.error = error.localizedDescription; return }
+            // Core is already stopped here; a stuck legacy record must not keep it unregistered.
+            do { try await retireLegacyOutputService() }
+            catch { self.error = "旧入力サービスを停止できませんでした: \(error.localizedDescription)" }
+            await registerCurrentServices()
         }
     }
     func unregisterServices() {
