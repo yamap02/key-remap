@@ -128,7 +128,7 @@ public:
         if(console_uid<501){paused=true;uid=0;stop();return;}
         auto pw=getpwuid(console_uid);if(!pw)return;std::string path=std::string(pw->pw_dir)+"/Library/Application Support/ReKey/rekey.json";
         struct stat st{};if(stat(path.c_str(),&st)!=0){paused=true;error="Configuration file not found";stop();return;}
-        if(st.st_uid!=console_uid||(st.st_mode&077)!=0||!S_ISREG(st.st_mode)||st.st_size>4*1024*1024){paused=true;error="Configuration ownership, permissions or size rejected";stop();return;}
+        if(st.st_uid!=console_uid||(st.st_mode&077)!=0||!S_ISREG(st.st_mode)||st.st_size>off_t(rekey::max_config_bytes)){paused=true;error="Configuration ownership, permissions or size rejected";stop();return;}
         if(uid==console_uid&&st.st_mtimespec.tv_sec==modified&&st.st_mtimespec.tv_nsec==modified_ns)return;
         try {
             int fd=open(path.c_str(),O_RDONLY|O_CLOEXEC);if(fd<0)throw std::runtime_error("Configuration open failed");struct stat opened{};if(fstat(fd,&opened)||opened.st_uid!=console_uid||opened.st_ino!=st.st_ino){close(fd);throw std::runtime_error("Configuration changed during open");}
@@ -229,7 +229,7 @@ bool allowed(uid_t caller,bool require_owner){uid_t console=0;gid_t gid;CFString
 @end
 int main(int argc,const char* argv[]){
     @autoreleasepool {
-        if(argc==3 && std::string(argv[1])=="--validate"){try{std::ifstream f(argv[2]);auto j=rekey::JSON::parse(f);auto p=rekey::Program::compile(j,{});for(auto& profile:j.at("profiles"))for(auto& d:profile.value("devices",rekey::JSON::array())){auto id=d.at("id");auto copy=j;for(auto& pp:copy["profiles"])pp["selected"]=(pp.at("id")==profile.at("id"));(void)rekey::Program::compile(copy,{id.at("vendor_id"),id.at("product_id"),id.value("serial",std::string())});}std::cout<<"Valid: "<<p.rules.size()<<" manipulators\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 65;}}
+        if(argc==3 && std::string(argv[1])=="--validate"){try{std::ifstream f(argv[2],std::ios::binary);if(!f)throw std::runtime_error("Configuration open failed");rekey::validate_config(std::string(std::istreambuf_iterator<char>(f),{}));std::cout<<"Valid\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 65;}}
         if(geteuid()!=0){std::cerr<<"rekey-core must run as root; use --validate FILE for offline validation\n";return 77;}
         umask(0077);mkdir("/var/run/rekey",0700);int lock=open("/var/run/rekey/core.lock",O_CREAT|O_RDWR|O_NOFOLLOW,0600);if(lock<0||flock(lock,LOCK_EX|LOCK_NB))return 73;
         Core instance;core=&instance;
