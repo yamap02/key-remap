@@ -15,6 +15,7 @@
 #include <IOKit/hid/IOHIDManager.h>
 #include <IOKit/hidsystem/IOHIDLib.h>
 #include <pwd.h>
+#include <optional>
 #include <fstream>
 #include <iostream>
 #include <libproc.h>
@@ -31,6 +32,21 @@ uint64_t hid_ns(IOHIDValueRef v){static const auto base=[]{mach_timebase_info_da
 rekey::Key hid_key(IOHIDValueRef v){auto element=IOHIDValueGetElement(v);auto page=IOHIDElementGetUsagePage(element),usage=IOHIDElementGetUsage(element);if((page!=7&&page!=12&&page!=0xff&&page!=0xff01)||usage==0)return 0;return page==7?usage:(page<<16)|usage;}
 // 0 when no regular user (uid >= 501) owns the console.
 uid_t console_user(){uid_t uid=0;gid_t gid=0;CFStringRef user=SCDynamicStoreCopyConsoleUser(nullptr,&uid,&gid);if(user)CFRelease(user);return uid<501?0:uid;}
+bool karabiner_running(){
+    int pid_count=proc_listallpids(nullptr,0);std::vector<pid_t> pids(size_t(pid_count)+32);
+    int count=proc_listallpids(pids.data(),int(pids.size()*sizeof(pid_t)));
+    for(int i=0;i<count;++i){char path[PROC_PIDPATHINFO_MAXSIZE]{};if(proc_pidpath(pids[i],path,sizeof(path))>0){std::string name=path;if(name.ends_with("/Karabiner-Core-Service")||name.ends_with("/karabiner_grabber"))return true;}}
+    return false;
+}
+// Results of the checks that wait on other processes (configd, opendirectoryd, TCC, the process table).
+struct SessionProbe { uid_t uid=0;std::string config_path;bool input_monitoring=false;std::optional<bool> conflict; };
+SessionProbe probe_session(bool check_conflict){
+    SessionProbe s;s.uid=console_user();
+    if(s.uid)if(auto pw=getpwuid(s.uid))s.config_path=std::string(pw->pw_dir)+"/Library/Application Support/ReKey/rekey.json";
+    s.input_monitoring=IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)==kIOHIDAccessTypeGranted;
+    if(check_conflict)s.conflict=karabiner_running();
+    return s;
+}
 struct Device { IOHIDDeviceRef hid=nullptr;rekey::Identity identity;std::string name;std::unique_ptr<rekey::Engine> engine;bool seized=false,muted=false;uint64_t inputs=0,outputs=0,started=0,retry_at=0,capture_started=0; };
 struct Trace {uint64_t time;uint32_t device,key,output;bool down,output_down;int rule;uint8_t input_modifiers,output_modifiers;};
 class Core {
@@ -47,7 +63,9 @@ public:
     IOHIDManagerRef manager=nullptr;std::array<Device,32> devices{};rekey::JSON config;std::string error="Configuration not loaded";uid_t uid=0;time_t modified=0;long modified_ns=0;uid_t rejected_uid=0;timespec rejected{};std::string rejected_error;dispatch_source_t config_watch=nullptr,link_watch=nullptr;std::string watch_path;
     // Opened without seizing so its reports close each latency sample.
     IOHIDDeviceRef virtual_keyboard=nullptr;rekey::LatencyProbe latency;os_log_t latency_log=os_log_create(REKEY_PRODUCT_ID,"latency");uint64_t latency_logged=0;
-    rekey::VirtualHIDOutput output{REKEY_PRODUCT_ID};uint64_t output_epoch=0;bool paused=true,viewer=false,secure=true,conflict=false,input_monitoring=false,agent_accessibility=false;uint64_t viewer_deadline=0,housekeeping=0,conflict_checked=0,last_context=0,ui_deadline=0;std::array<Trace,2048> traces{};size_t trace_write=0,trace_read=0;struct PendingAction {uint32_t device;int action;};std::array<PendingAction,256> actions{};size_t action_write=0,action_read=0;rekey::Context context;
+    // Refreshed off the main thread so input callbacks never wait on IPC.
+    uid_t session_uid=0;std::string session_config;dispatch_queue_t probe_queue=nullptr;dispatch_source_t probe_timer=nullptr;
+    rekey::VirtualHIDOutput output{REKEY_PRODUCT_ID};uint64_t output_epoch=0;bool paused=true,viewer=false,secure=true,conflict=false,input_monitoring=false,agent_accessibility=false;uint64_t viewer_deadline=0,housekeeping=0,last_context=0,ui_deadline=0;std::array<Trace,2048> traces{};size_t trace_write=0,trace_read=0;struct PendingAction {uint32_t device;int action;};std::array<PendingAction,256> actions{};size_t action_write=0,action_read=0;rekey::Context context;
     Core(){
         manager=IOHIDManagerCreate(kCFAllocatorDefault,kIOHIDManagerOptionIndependentDevices);NSDictionary* match=@{@kIOHIDDeviceUsagePageKey:@1,@kIOHIDDeviceUsageKey:@6};IOHIDManagerSetDeviceMatching(manager,(__bridge CFDictionaryRef)match);
         IOHIDManagerRegisterDeviceMatchingCallback(manager,[](void* ctx,IOReturn,void*,IOHIDDeviceRef d){static_cast<Core*>(ctx)->add(d);},this);
@@ -73,8 +91,16 @@ public:
         if(display)IOObjectRelease(display);
         if(display_port)CFRunLoopAddSource(CFRunLoopGetMain(),IONotificationPortGetRunLoopSource(display_port),kCFRunLoopDefaultMode);
         if(!power_connection||!display_notifier)os_log_error(OS_LOG_DEFAULT,"ReKey power notifications unavailable: system=%{public}d display=%{public}d",bool(power_connection),bool(display_notifier));
+        apply(probe_session(true));
+        probe_queue=dispatch_queue_create(REKEY_PRODUCT_ID ".probe",dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,QOS_CLASS_UTILITY,0));
+        probe_timer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,probe_queue);
+        __block unsigned rounds=0;
+        dispatch_source_set_timer(probe_timer,dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC),NSEC_PER_SEC,100*NSEC_PER_MSEC);
+        dispatch_source_set_event_handler(probe_timer,^{auto s=probe_session(++rounds%5==0);dispatch_async(dispatch_get_main_queue(),^{apply(s);});});
+        dispatch_resume(probe_timer);
     }
-    ~Core(){if(system_notifier)IODeregisterForSystemPower(&system_notifier);if(power_connection)IOServiceClose(power_connection);if(display_notifier)IOObjectRelease(display_notifier);if(system_port)IONotificationPortDestroy(system_port);if(display_port)IONotificationPortDestroy(display_port);if(virtual_keyboard){IOHIDDeviceClose(virtual_keyboard,0);CFRelease(virtual_keyboard);}if(config_watch)dispatch_source_cancel(config_watch);if(link_watch)dispatch_source_cancel(link_watch);stop();IOHIDManagerClose(manager,0);CFRelease(manager);}
+    void apply(const SessionProbe& s){session_uid=s.uid;session_config=s.config_path;input_monitoring=s.input_monitoring;if(s.conflict)conflict=*s.conflict;}
+    ~Core(){if(probe_timer)dispatch_source_cancel(probe_timer);if(system_notifier)IODeregisterForSystemPower(&system_notifier);if(power_connection)IOServiceClose(power_connection);if(display_notifier)IOObjectRelease(display_notifier);if(system_port)IONotificationPortDestroy(system_port);if(display_port)IONotificationPortDestroy(display_port);if(virtual_keyboard){IOHIDDeviceClose(virtual_keyboard,0);CFRelease(virtual_keyboard);}if(config_watch)dispatch_source_cancel(config_watch);if(link_watch)dispatch_source_cancel(link_watch);stop();IOHIDManagerClose(manager,0);CFRelease(manager);}
     void power_changed(bool changed){
         if(!changed)return;
         stop();
@@ -138,21 +164,15 @@ public:
         }
     }
 
-    bool karabiner(){
-        int pid_count=proc_listallpids(nullptr,0);std::vector<pid_t> pids(size_t(pid_count)+32);
-        int count=proc_listallpids(pids.data(),int(pids.size()*sizeof(pid_t)));
-        for(int i=0;i<count;++i){char path[PROC_PIDPATHINFO_MAXSIZE]{};if(proc_pidpath(pids[i],path,sizeof(path))>0){std::string name=path;if(name.ends_with("/Karabiner-Core-Service")||name.ends_with("/karabiner_grabber"))return true;}}
-        return false;
-    }
     dispatch_source_t watch_directory(const std::string& path){
         int fd=open(path.c_str(),O_EVTONLY|O_CLOEXEC);if(fd<0)return nullptr;
         auto source=dispatch_source_create(DISPATCH_SOURCE_TYPE_VNODE,uintptr_t(fd),DISPATCH_VNODE_WRITE|DISPATCH_VNODE_DELETE|DISPATCH_VNODE_RENAME,dispatch_get_main_queue());
         dispatch_source_set_event_handler(source,^{load();});dispatch_source_set_cancel_handler(source,^{close(fd);});dispatch_resume(source);return source;
     }
     void load(){
-        uid_t console_uid=console_user();
+        uid_t console_uid=session_uid;
         if(!console_uid){paused=true;uid=0;stop();return;}
-        auto pw=getpwuid(console_uid);if(!pw)return;std::string path=std::string(pw->pw_dir)+"/Library/Application Support/ReKey/rekey.json";
+        if(session_config.empty())return;const std::string path=session_config;
         struct stat st{};if(stat(path.c_str(),&st)!=0){paused=true;error="Configuration file not found";stop();return;}
         if(st.st_uid!=console_uid||(st.st_mode&077)!=0||!S_ISREG(st.st_mode)||st.st_size>off_t(rekey::max_config_bytes)){paused=true;error="Configuration ownership, permissions or size rejected";stop();return;}
         if(uid==console_uid&&st.st_mtimespec.tv_sec==modified&&st.st_mtimespec.tv_nsec==modified_ns)return;
@@ -171,8 +191,7 @@ public:
         }catch(const std::exception& e){error=e.what();if(read_done){rejected_uid=console_uid;rejected=st.st_mtimespec;rejected_error=error;} /* Keep the last valid program and settings. */}
     }
     void tick(){
-        if(now_ms()-conflict_checked>=5000){conflict_checked=now_ms();conflict=karabiner();}
-        if(now_ms()-housekeeping>=1000){housekeeping=now_ms();load();input_monitoring=IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)==kIOHIDAccessTypeGranted;}
+        if(now_ms()-housekeeping>=1000){housekeeping=now_ms();load();}
         output.heartbeat();
         if(now_ms()-latency_logged>=10000){latency_logged=now_ms();log_latency();}
         if(installed_files && (!installed_files_checked || now_ms()-installed_files_checked>=100)){
