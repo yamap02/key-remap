@@ -29,6 +29,8 @@ struct Device { IOHIDDeviceRef hid=nullptr;rekey::Identity identity;std::string 
 struct Trace {uint64_t time;uint32_t device,key,output;bool down,output_down;int rule;uint8_t input_modifiers,output_modifiers;};
 class Core {
 public:
+    static constexpr const char* seize_error="Keyboard could not be seized (Input Monitoring or another remapper)";
+    static constexpr const char* monitoring_error="Input Monitoring permission is required for rekey-core";
     rekey::PowerState power;
     std::unique_ptr<rekey::InstalledFilesGuard> installed_files;
     uint64_t installed_files_checked=0;
@@ -36,7 +38,7 @@ public:
     IONotificationPortRef system_port=nullptr,display_port=nullptr;
     io_connect_t power_connection=IO_OBJECT_NULL;
     io_object_t system_notifier=IO_OBJECT_NULL,display_notifier=IO_OBJECT_NULL;
-    IOHIDManagerRef manager=nullptr;std::array<Device,32> devices{};rekey::JSON config;std::string error="Configuration not loaded";uid_t uid=0;std::string config_path;time_t modified=0;long modified_ns=0;dispatch_source_t config_watch=nullptr,link_watch=nullptr;std::string watch_path;
+    IOHIDManagerRef manager=nullptr;std::array<Device,32> devices{};rekey::JSON config;std::string error="Configuration not loaded";uid_t uid=0;time_t modified=0;long modified_ns=0;dispatch_source_t config_watch=nullptr,link_watch=nullptr;std::string watch_path;
     rekey::VirtualHIDOutput output;uint64_t output_epoch=0;bool paused=true,viewer=false,secure=true,conflict=false,input_monitoring=false,agent_accessibility=false;uint64_t viewer_deadline=0,housekeeping=0,last_context=0,ui_deadline=0;std::array<Trace,2048> traces{};size_t trace_write=0,trace_read=0;struct PendingAction {uint32_t device;int action;};std::array<PendingAction,256> actions{};size_t action_write=0,action_read=0;rekey::Context context;
     Core(){
         manager=IOHIDManagerCreate(kCFAllocatorDefault,kIOHIDManagerOptionIndependentDevices);NSDictionary* match=@{@kIOHIDDeviceUsagePageKey:@1,@kIOHIDDeviceUsageKey:@6};IOHIDManagerSetDeviceMatching(manager,(__bridge CFDictionaryRef)match);
@@ -99,7 +101,7 @@ public:
         Device* d=nullptr;for(auto& x:devices)if(x.hid==hid){d=&x;break;}if(!d||!d->seized||!d->engine||d->muted)return;
         if(IOHIDValueGetTimeStamp(v)<d->capture_started)return;
         rekey::Key key=page==7?usage:(page<<16)|usage;bool down=IOHIDValueGetIntegerValue(v)!=0;if(d->inputs++==0)d->started=now_ms();
-        auto out=d->engine->process({key,down,now_ms(),uint32_t(d-devices.data())});if(!d->muted)send(out,*d);
+        auto out=d->engine->process({key,down,now_ms(),uint32_t(d-devices.data())});send(out,*d);
         record(key,down,out,*d);
     }
     void record(rekey::Key input,bool down,const rekey::Outputs& out,Device& d){
@@ -119,9 +121,8 @@ public:
     dispatch_source_t watch_directory(const std::string& path){
         int fd=open(path.c_str(),O_EVTONLY|O_CLOEXEC);if(fd<0)return nullptr;
         auto source=dispatch_source_create(DISPATCH_SOURCE_TYPE_VNODE,uintptr_t(fd),DISPATCH_VNODE_WRITE|DISPATCH_VNODE_DELETE|DISPATCH_VNODE_RENAME,dispatch_get_main_queue());
-        dispatch_source_set_event_handler(source,^{core_load();});dispatch_source_set_cancel_handler(source,^{close(fd);});dispatch_resume(source);return source;
+        dispatch_source_set_event_handler(source,^{load();});dispatch_source_set_cancel_handler(source,^{close(fd);});dispatch_resume(source);return source;
     }
-    void core_load(){load();}
     void load(){
         uid_t console_uid=0;gid_t gid=0;CFStringRef user=SCDynamicStoreCopyConsoleUser(nullptr,&console_uid,&gid);if(user)CFRelease(user);
         if(console_uid<501){paused=true;uid=0;stop();return;}
@@ -134,10 +135,10 @@ public:
             std::string data(size_t(opened.st_size),'\0');auto read_count=read(fd,data.data(),data.size());close(fd);if(read_count!=ssize_t(data.size()))throw std::runtime_error("Configuration read failed");
             auto candidate=rekey::JSON::parse(data);
             // Validate all device programs before replacing the active configuration.
-            auto trial=rekey::Program::compile(candidate,{});for(auto& d:devices)if(d.hid)(void)rekey::Program::compile(candidate,d.identity);
+            (void)rekey::Program::compile(candidate,{});for(auto& d:devices)if(d.hid)(void)rekey::Program::compile(candidate,d.identity);
             stop();
             char resolved[PATH_MAX]{};if(realpath(path.c_str(),resolved)){std::string actual=resolved;actual=actual.substr(0,actual.find_last_of('/'));if(watch_path!=actual){if(config_watch)dispatch_source_cancel(config_watch);if(link_watch)dispatch_source_cancel(link_watch);config_watch=watch_directory(actual);auto original=path.substr(0,path.find_last_of('/'));link_watch=original!=actual?watch_directory(original):nullptr;watch_path=actual;}}
-            config=std::move(candidate);uid=console_uid;config_path=path;modified=st.st_mtimespec.tv_sec;modified_ns=st.st_mtimespec.tv_nsec;paused=config.at("global").value("paused",false);error="";for(auto& d:devices)if(d.hid)compile(d);
+            config=std::move(candidate);uid=console_uid;modified=st.st_mtimespec.tv_sec;modified_ns=st.st_mtimespec.tv_nsec;paused=config.at("global").value("paused",false);error="";for(auto& d:devices)if(d.hid)compile(d);
         }catch(const std::exception& e){error=e.what(); /* Keep the last valid program and settings. */}
     }
     void tick(){
@@ -149,10 +150,10 @@ public:
         if(!installed_files_ok){error="Installed app changed; input stopped until the service restarts";stop();return;}
         if(output_epoch!=output.epoch()){stop();output_epoch=output.epoch();}
         if(power.suspended()||paused||(config.is_object()&&config.at("global").value("disable_on_quit",true)&&now_ms()>ui_deadline)||conflict||!output.ready()){stop();return;}
-        if(!input_monitoring){error="Input Monitoring permission is required for rekey-core";stop();return;}
+        if(!input_monitoring){error=monitoring_error;stop();return;}
         bool disable_builtin=false;for(auto& d:devices)if(d.hid&&!d.identity.builtin&&d.engine&&d.engine->program().disable_builtin)disable_builtin=true;
         for(auto& d:devices){if(!d.hid||!d.engine)continue;if(d.engine->program().ignore){release(d);continue;}
-            if(!d.seized){if(now_ms()<d.retry_at)continue;d.capture_started=mach_absolute_time();auto result=IOHIDDeviceOpen(d.hid,kIOHIDOptionsTypeSeizeDevice);if(result!=kIOReturnSuccess){d.retry_at=now_ms()+1000;error="Keyboard could not be seized (Input Monitoring or another remapper)";continue;}d.retry_at=0;if(error=="Keyboard could not be seized (Input Monitoring or another remapper)"||error=="Input Monitoring permission is required for rekey-core")error.clear();d.seized=true;d.inputs=0;d.outputs=0;d.started=now_ms();IOHIDDeviceRegisterInputValueCallback(d.hid,[](void* ctx,IOReturn,void*,IOHIDValueRef v){static_cast<Core*>(ctx)->value(v);},this);IOHIDDeviceScheduleWithRunLoop(d.hid,CFRunLoopGetMain(),kCFRunLoopDefaultMode);}
+            if(!d.seized){if(now_ms()<d.retry_at)continue;d.capture_started=mach_absolute_time();auto result=IOHIDDeviceOpen(d.hid,kIOHIDOptionsTypeSeizeDevice);if(result!=kIOReturnSuccess){d.retry_at=now_ms()+1000;error=seize_error;continue;}d.retry_at=0;if(error==seize_error||error==monitoring_error)error.clear();d.seized=true;d.inputs=0;d.outputs=0;d.started=now_ms();IOHIDDeviceRegisterInputValueCallback(d.hid,[](void* ctx,IOReturn,void*,IOHIDValueRef v){static_cast<Core*>(ctx)->value(v);},this);IOHIDDeviceScheduleWithRunLoop(d.hid,CFRunLoopGetMain(),kCFRunLoopDefaultMode);}
             if(d.engine->paused()){paused=true;error="Emergency stop activated";break;}
             bool mute=disable_builtin&&d.identity.builtin;if(mute&&!d.muted)send(d.engine->release_all(now_ms()),d);d.muted=mute;
             if(d.muted)continue;

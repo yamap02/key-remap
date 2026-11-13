@@ -3,7 +3,6 @@
 #include <iostream>
 #include <cstdlib>
 #include <chrono>
-#include <numeric>
 using namespace rekey;
 bool measure_allocations=false;size_t allocations=0;
 void* operator new(size_t size){if(measure_allocations)++allocations;if(auto p=std::malloc(size))return p;throw std::bad_alloc();}

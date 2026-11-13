@@ -5,9 +5,7 @@
 #include <bitset>
 #include <vector>
 #include <regex>
-#include <optional>
 #include <algorithm>
-#include <cstring>
 namespace rekey {
 using JSON = nlohmann::json;
 constexpr size_t max_actions=16, max_rules=512, max_layers=32, max_variables=64;
