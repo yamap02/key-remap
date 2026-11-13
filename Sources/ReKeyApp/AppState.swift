@@ -440,7 +440,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         } catch { self.error = error.localizedDescription }
     }
     func setLogin(_ enabled: Bool) {
-        do { if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }; config.global.start_at_login = enabled; changed() }
+        // The login item itself is the source of truth; redraw the toggle that reads it.
+        do { if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }; objectWillChange.send() }
         catch { self.error = error.localizedDescription }
     }
     func refreshSystem() {

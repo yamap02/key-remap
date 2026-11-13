@@ -132,3 +132,11 @@ import Foundation
     c.profiles[1].shortcut?.key = "p"
     #expect(c.shortcutConflicts(profile: c.profiles[1].id))
 }
+@Test func removedGlobalFieldsStillLoadAndAreNotWrittenBack() throws {
+    let legacy = #"{"schema_version":1,"global":{"check_for_updates":false,"show_in_menu_bar":false,"start_at_login":false,"disable_on_quit":true,"paused":false,"thresholds_ms":{"alone":200,"held_down":500,"simultaneous":50}},"profiles":[{"name":"Default","selected":true}]}"#
+    let c = try Configuration.decode(Data(legacy.utf8))
+    #expect(c.global.check_for_updates == false)
+    let written = try String(decoding: c.encoded(), as: UTF8.self)
+    #expect(!written.contains("show_in_menu_bar"))
+    #expect(!written.contains("start_at_login"))
+}

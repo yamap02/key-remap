@@ -39,20 +39,17 @@ public struct Thresholds: Codable, Equatable, Sendable {
 }
 public struct GlobalSettings: Codable, Equatable, Sendable {
     public var check_for_updates = true
-    public var show_in_menu_bar = true
     public var disable_on_quit = true
     public var thresholds_ms = Thresholds()
-    public var start_at_login = true
     public var paused = false
     public init() {}
-    enum CodingKeys: String, CodingKey { case check_for_updates, show_in_menu_bar, disable_on_quit, thresholds_ms, start_at_login, paused }
+    // Older files may still contain show_in_menu_bar and start_at_login; they are ignored.
+    enum CodingKeys: String, CodingKey { case check_for_updates, disable_on_quit, thresholds_ms, paused }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         check_for_updates = try c.decodeIfPresent(Bool.self, forKey: .check_for_updates) ?? true
-        show_in_menu_bar = try c.decodeIfPresent(Bool.self, forKey: .show_in_menu_bar) ?? true
         disable_on_quit = try c.decodeIfPresent(Bool.self, forKey: .disable_on_quit) ?? true
         thresholds_ms = try c.decodeIfPresent(Thresholds.self, forKey: .thresholds_ms) ?? .init()
-        start_at_login = try c.decodeIfPresent(Bool.self, forKey: .start_at_login) ?? true
         paused = try c.decodeIfPresent(Bool.self, forKey: .paused) ?? false
     }
 }
