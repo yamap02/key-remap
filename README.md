@@ -24,7 +24,6 @@ ReKey はキーボード入力を扱い、root 権限で動作する入力サー
 必要環境: macOS 27、Apple Silicon、Xcode の macOS 27 SDK / Swift 6、Command Line Tools。
 
 ```sh
-git submodule update --init --recursive
 swift test
 scripts/test-core.sh
 scripts/build-app.sh

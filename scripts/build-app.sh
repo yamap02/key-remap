@@ -94,9 +94,7 @@ PYTHON
 codesign "${sign_args[@]}" "$agent"
 if [[ -f build/rekey-core ]]; then
   mkdir -p "$app/Contents/Library/LaunchDaemons" "$app/Contents/Library/HelperTools"
-  rm -f "$app/Contents/Library/HelperTools/rekey-vhid"
   cp build/rekey-core build/rekey-bench "$app/Contents/Library/HelperTools/"
-  rm -f "$app/Contents/Library/LaunchDaemons/jp.example.rekey.agent.plist"
   cp Resources/jp.example.rekey.vhid.plist "$app/Contents/Library/LaunchDaemons/"
   cp Vendor/VirtualHID/files/LaunchDaemons/org.pqrs.service.daemon.Karabiner-VirtualHIDDevice-Daemon.plist "$app/Contents/Library/LaunchDaemons/"
   codesign "${sign_args[@]}" "$app/Contents/Library/HelperTools/rekey-core"
