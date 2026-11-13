@@ -107,7 +107,7 @@ build/rekey-bench --config "$HOME/Library/Application Support/ReKey/rekey.json" 
 log stream --style compact --predicate 'subsystem == "jp.example.rekey" AND category == "latency"'
 ```
 
-`rekey-bench --physical` は引き続き未対応です。
+サブシステム名はビルド時の `REKEY_PRODUCT_ID` です（上の例は開発版の既定値）。`rekey-bench --physical` は引き続き未対応です。
 
 ## 配布署名
 
