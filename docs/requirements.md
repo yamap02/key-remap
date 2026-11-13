@@ -32,8 +32,8 @@
 | 0600、原子的置換、所有者確認、20 バックアップ、symlink | Swift テストで確認。Core も所有者・モード・ファイルサイズを確認 | fsync / F_FULLFSYNC とディレクトリ同期を実装。停電・iCloud の実機試験は未実施 |
 | schema_version | v1 を許可、新しい版は拒否 | 旧版が発生した時点でマイグレーション実装 |
 | XPC の署名条件 | root 所有の UI/Agent に対する designated requirement を固定 | インストール後に許可/拒否を実機確認。出荷 Team ID を確定 |
-| root-only ソケット・共有メモリ | 0600、getpeereid、root 所有検証、受信開始ハンドシェイク | 不正接続・再起動・キュー溢れの障害注入 |
-| イベントを扱う root 2 プロセスとユーザー Agent | ソースとバイナリを実装 | 評価用出力は既存 Karabiner 仮想 HID サービスにも依存。出荷には独自 dext/IOUserClient 経路が必要 |
+| Core 内の出力キュー（旧 root-only ソケット・共有メモリは廃止） | プロセス内の有界キュー（4096 件）、世代番号でリセット後の再送を防止 | 再起動・キュー溢れの障害注入 |
+| イベントを扱う root 1 プロセス（rekey-core）とユーザー Agent | ソースとバイナリを実装 | 評価用出力は既存 Karabiner 仮想 HID サービスにも依存。出荷には独自 dext/IOUserClient 経路が必要 |
 | セキュアな入力・ログ | 既定でキーのファイルログなし、secure 状態不明/Agent heartbeat 断で Viewer を抑止 | フォーカス切替の実機検証、os_log とローテーションログ |
 | UI 終了時の無効化 | XPC lifecycle と 5 秒の UI lease。ユーザーの一時停止設定と分離 | 正常終了/強制終了/再起動を実機確認 |
 | 緊急停止・全キー解放 | 物理修飾キーの長押し、変換出力の一括解放テスト | 占有中の実機障害注入 |

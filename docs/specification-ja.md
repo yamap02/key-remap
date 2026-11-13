@@ -2,6 +2,14 @@ macOS 27 常駐型キーリマップツール アプリ仕様書
 Oct 21, 2026 · @yamap
 
 > 注記: これは初期仕様の原本です。その後 rekey-vhid（仮想 HID デーモン）は rekey-core に統合され、共有メモリのリングバッファや Unix ドメインソケットは使っていません。現行の構成は [実装・検証記録](consolidated-service-validation-ja.md) を参照してください。
+>
+> 本文のうち、次の点も現行の実装と異なります（実装が正）。
+> - ReKey Agent は入力監視を要求しません。入力監視は rekey-core が要求し、Agent はアクセシビリティの確認と最前面アプリ・入力ソースの通知、ユーザーアクションの実行を担います。
+> - Core は DispatchSource の変更通知に加え、1 秒ごとに設定ファイルを stat して再読込します。
+> - バックアップ名は `rekey.json.bak.<日時>-<UUID>` です。
+> - ユーザーアクションは shell_command / open_app / select_input_source / notify の 4 種で、スリープは未対応です。
+> - rekey-bench が測るのは変換処理だけ（`transform_only`）で、物理キーから仮想出力までの遅延は測りません。
+> - 実行ファイルは `ReKey.app/Contents/Library/HelperTools/` に置き、旧版の停止は preinstall が行います。
 
 1. 概要・目的
 本製品（仮称: ReKey）は、macOS 27 Golden Gate 上でメニューバーに常駐し、キーボード入力をシステムレベルで書き換えるキーリマップツールである。Karabiner-Elements と同じ「ハードウェアを占有 → 書き換え → 仮想 HID デバイスから再送出」の方式を採りつつ、入力遅延の小ささと、内蔵・外付けを問わずキーボードごとに独立したリマップを設計の最優先とする。
