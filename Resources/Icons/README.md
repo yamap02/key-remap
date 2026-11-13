@@ -18,3 +18,16 @@ The app artwork was created with the built-in imagegen tool. Final prompt:
 Validation: all 26 Swift tests pass; release app and installer build successfully.
 The menu artwork was inspected at 18 pt on light and dark backgrounds. Installed
 Finder/menu bar appearance remains to be checked after updating the installed app.
+
+## Publication review
+
+The prompt and creation method above record provenance; they do not establish
+trademark clearance, freedom from resemblance to third-party artwork, or
+exclusive rights in generated artwork. Before release, review the product name,
+app icon, and promotional images under the applicable creation-service terms
+and third-party rights. Preserve provenance and permissions for any new
+reference images or assets. No trademark or artwork clearance is recorded here.
+See [the publication checklist](../../docs/publication-rights-ja.md).
+
+The validation paragraph above records earlier development checks, not approval
+of a current signed or notarized public release.

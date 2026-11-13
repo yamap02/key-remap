@@ -19,6 +19,12 @@
 
 公式ドライバ本体のライセンスは [Unlicense](https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice/blob/ac836ed8a974cd5182495251855cabdb762f50cb/LICENSE.md) です。ReKey に含まれる Sparkle とその他の依存物のライセンスは、app の `Contents/Resources/Licenses/` にあります。公開前の依存・ライセンス確認は未完了です。
 
+Finder で `ReKey.app` を右クリックして「パッケージの内容を表示」を選び、
+`Contents` → `Resources` → `Licenses` を開くと全文を確認できます。
+部品と出典は [第三者ライセンス一覧](../Resources/Licenses/README.md) を参照してください。
+ReKey は Karabiner・pqrs.org・Apple の公式製品ではなく、提携・推奨を示すものではありません。
+配布担当者向けの未確認事項は [公開・配布前の権利確認](publication-rights-ja.md) に記録しています。
+
 ## 更新する
 
 ReKey の「その他」画面で「今すぐ更新を確認」を押します。「更新を自動的に確認」を有効にすると定期的に更新を確認します。自動ダウンロードと自動インストールは行いません。更新を選択した後は入力サービスを停止し、インストール時に macOS の管理者認証を求められる場合があります。

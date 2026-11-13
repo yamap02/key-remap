@@ -116,3 +116,5 @@ ReKey は [Karabiner-Elements](https://github.com/pqrs-org/Karabiner-Elements) �
 Sparkle、Asio、pqrs C++ ヘッダー、Microsoft GSL、nlohmann/json、nod、type_safe などの利用部品と通知文は [第三者ライセンス一覧](Resources/Licenses/README.md) を参照してください。ビルド時には ReKey のライセンスと第三者ライセンスをアプリの `Contents/Resources/Licenses/` に収録します。別途インストールする公式ドライバパッケージの通知文も確認してください。
 
 この記載は独自コード全体の類似性調査や、すべての依存物のライセンス監査が完了したことを示すものではありません。依存物の追加・更新時と公開前には、出典、適用ライセンス、必要な著作権表示・通知文を確認してください。
+
+ソース公開とアプリ配布の担当者は [公開・配布前の権利確認](docs/publication-rights-ja.md) を参照してください。リポジトリ内の未使用ソース・公式ドライバ pkg・公開する履歴も確認対象です。製品名やロゴの調査、権利者の確認、独自 DriverKit 拡張の配布条件など、未確認事項も同文書に記載しています。外部からの変更提供については [貢献ガイド](CONTRIBUTING.md) を参照してください。
