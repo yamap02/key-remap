@@ -1,6 +1,7 @@
 #pragma once
 #include "HIDReports.hpp"
 #include "OutputQueue.hpp"
+#include "Realtime.hpp"
 #include <pqrs/karabiner/driverkit/virtual_hid_device_service.hpp>
 #include <semaphore>
 #include <thread>
@@ -26,8 +27,11 @@ class VirtualHIDOutput {
     }
     void run() {
         namespace service=pqrs::karabiner::driverkit::virtual_hid_device_service;
+        make_realtime("output");
         service::client client;
         client.connected.connect([&] {
+            // Runs on the pqrs dispatcher thread, which forwards every report.
+            make_realtime("dispatcher");
             service::virtual_hid_keyboard_parameters p;
             p.set_country_code(pqrs::hid::country_code::us);
             client.async_virtual_hid_keyboard_initialize(p);

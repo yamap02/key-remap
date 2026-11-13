@@ -311,6 +311,7 @@ int main(int argc,const char* argv[]){
         dispatch_source_set_event_handler(termination,^{core->stop();CFRunLoopStop(CFRunLoopGetMain());});dispatch_resume(termination);
         dispatch_source_t interrupt=dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL,SIGINT,0,dispatch_get_main_queue());
         dispatch_source_set_event_handler(interrupt,^{core->stop();CFRunLoopStop(CFRunLoopGetMain());});dispatch_resume(interrupt);
+        rekey::make_realtime("input");
         CFRunLoopRun();
         dispatch_source_cancel(termination);dispatch_source_cancel(interrupt);
         }
