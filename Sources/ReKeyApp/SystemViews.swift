@@ -137,12 +137,12 @@ struct GeneralView: View {
             Section("言語") { Picker("言語", selection: $language) { Text("日本語").tag("ja"); Text("English").tag("en"); Text("システム設定に従う").tag("system") } }
             Section("起動と終了") {
                 Toggle("ログイン時に ReKey を起動", isOn: Binding(get: { SMAppService.mainApp.status == .enabled }, set: { state.setLogin($0) }))
-                Toggle("終了時にリマップを無効化", isOn: $state.config.global.disable_on_quit).onChange(of: state.config.global.disable_on_quit) { state.changed() }
+                Toggle("終了時にリマップを無効化", isOn: global(\.disable_on_quit))
             }
             Section("判定時間") {
-                Stepper("単押し: \(state.config.global.thresholds_ms.alone) ms", value: $state.config.global.thresholds_ms.alone, in: 1...5000, step: 10).onChange(of: state.config.global.thresholds_ms.alone) { state.changed() }
-                Stepper("長押し: \(state.config.global.thresholds_ms.held_down) ms", value: $state.config.global.thresholds_ms.held_down, in: 1...5000, step: 10).onChange(of: state.config.global.thresholds_ms.held_down) { state.changed() }
-                Stepper("同時押し: \(state.config.global.thresholds_ms.simultaneous) ms", value: $state.config.global.thresholds_ms.simultaneous, in: 1...500, step: 5).onChange(of: state.config.global.thresholds_ms.simultaneous) { state.changed() }
+                Stepper("単押し: \(state.config.global.thresholds_ms.alone) ms", value: global(\.thresholds_ms.alone), in: 1...5000, step: 10)
+                Stepper("長押し: \(state.config.global.thresholds_ms.held_down) ms", value: global(\.thresholds_ms.held_down), in: 1...5000, step: 10)
+                Stepper("同時押し: \(state.config.global.thresholds_ms.simultaneous) ms", value: global(\.thresholds_ms.simultaneous), in: 1...500, step: 5)
             }
             Section("設定ファイル") {
                 LabeledContent("保存先", value: "~/Library/Application Support/ReKey/rekey.json").font(.callout)
@@ -150,8 +150,7 @@ struct GeneralView: View {
                 HStack { Button("Finder で表示") { state.revealConfig() }; Button("再読込") { state.reload(reloadEngine: true) }; Button("すべて書き出す…") { state.exportFile() } }
             }
             Section("アップデート") {
-                Toggle("更新を自動的に確認", isOn: $state.config.global.check_for_updates)
-                    .onChange(of: state.config.global.check_for_updates) { state.updates.setAutomaticChecks(state.config.global.check_for_updates); state.changed() }
+                Toggle("更新を自動的に確認", isOn: Binding(get: { state.config.global.check_for_updates }, set: { state.config.global.check_for_updates = $0; state.updates.setAutomaticChecks($0); state.changed() }))
                     .disabled(!state.updates.available)
                 Button("今すぐ更新を確認") { state.updates.checkNow() }.disabled(!state.updates.available)
                 Text(L(state.updates.startupError != nil ? "アップデート機能を開始できませんでした。" : state.updates.available ? "更新の確認時に配信サーバーへ接続します。インストール時に管理者認証を求められる場合があります。" : "このビルドには更新配信先と公開鍵が設定されていません。"))
@@ -161,6 +160,10 @@ struct GeneralView: View {
                 Text("ReKey \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—") · macOS 27 / Apple Silicon").font(.callout)
             }
         }.formStyle(.grouped)
+    }
+    /// Saves only user edits; onChange would also fire after an external reload.
+    func global<T>(_ path: WritableKeyPath<GlobalSettings, T>) -> Binding<T> {
+        Binding(get: { state.config.global[keyPath: path] }, set: { state.config.global[keyPath: path] = $0; state.changed() })
     }
 }
 struct EventViewer: View {

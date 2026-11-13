@@ -10,9 +10,10 @@ import ReKeyModel
 
 @MainActor final class Agent {
     var connection: NSXPCConnection?
-    var lastApp = ""
-    var lastSource = ""
-    var lastSecure = true
+    /// The frontmost app that automatic selection last evaluated against a loaded configuration.
+    var evaluatedApp = ""
+    /// The configuration is reloaded only when its file stamp changes.
+    var loaded: (stamp: ConfigurationStore.FileStamp?, config: Configuration?)?
     var viewerLease = ViewerLease()
     var viewerRequestInFlight = false
     var busy = false
@@ -100,7 +101,7 @@ import ReKeyModel
         }
         secure = secure || IsSecureEventInputEnabled()
         devicePoll += 1
-        if app != lastApp || devicePoll % 10 == 0 { automaticProfile(app: app) }
+        if app != evaluatedApp || devicePoll % 10 == 0 { automaticProfile(app: app) }
         let remote = proxy()
         if !viewerRequestInFlight, let remote {
             viewerRequestInFlight = true
@@ -113,7 +114,6 @@ import ReKeyModel
             }
         }
         remote?.context(app: app, inputSource: source, secure: secure, accessibility: accessibility) { _ in }
-        lastApp = app; lastSource = source; lastSecure = secure
         processes.removeAll { !$0.isRunning }
         if !busy, let remote {
             busy = true
@@ -124,7 +124,9 @@ import ReKeyModel
         }
     }
     func automaticProfile(app: String) {
-        guard let c = try? store.load() else { return }
+        let stamp = store.stamp()
+        if loaded == nil || loaded?.stamp != stamp { loaded = (stamp, try? store.load()) }
+        guard let c = loaded?.config else { return }
         updateShortcuts(c)
         if hid == nil {
             let manager = IOHIDManagerCreate(kCFAllocatorDefault, 0)
@@ -137,8 +139,8 @@ import ReKeyModel
         }
         let currentIDs = Set(connected)
         let currentSelections = Dictionary(uniqueKeysWithValues: c.profiles.map { ($0.id, $0.auto_select) })
-        guard app != lastApp || currentIDs != previousDeviceIDs || currentSelections != lastAutoSelections else { return }
-        previousDeviceIDs = currentIDs; lastAutoSelections = currentSelections
+        guard app != evaluatedApp || currentIDs != previousDeviceIDs || currentSelections != lastAutoSelections else { return }
+        evaluatedApp = app; previousDeviceIDs = currentIDs; lastAutoSelections = currentSelections
         let target = c.profiles.first { p in
             let conditions = p.auto_select
             guard !conditions.frontmost_app.isEmpty || !conditions.device.isEmpty else { return false }

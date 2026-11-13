@@ -18,6 +18,14 @@ public struct ConfigurationStore: Sendable {
     public init(url: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/ReKey/rekey.json")) { self.url = url }
     public var resolvedURL: URL { url.resolvingSymlinksInPath() }
     public func load() throws -> Configuration { try snapshot().configuration }
+    /// Changes whenever the file is replaced or rewritten; nil while it does not exist.
+    public struct FileStamp: Equatable, Sendable { let inode: UInt64, size: Int64, seconds: Int, nanoseconds: Int }
+    /// A cheap check before reading and validating the whole file.
+    public func stamp() -> FileStamp? {
+        var st = stat()
+        guard stat(resolvedURL.path, &st) == 0 else { return nil }
+        return FileStamp(inode: st.st_ino, size: st.st_size, seconds: st.st_mtimespec.tv_sec, nanoseconds: st.st_mtimespec.tv_nsec)
+    }
     public func snapshot() throws -> ConfigurationSnapshot { try read(at: resolvedURL) }
     /// Merge the editor's delta with the current file while holding the same lock as the Agent.
     public func save(_ config: Configuration, basedOn baseline: Data?) throws -> ConfigurationSnapshot {

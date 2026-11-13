@@ -161,3 +161,19 @@ private func event(_ index: Int) -> TraceEvent {
     #expect(try store.load().profiles[0].name == "Saved on quit")
     withExtendedLifetime(state) {}
 }
+
+@Test @MainActor func scopeFallsBackWhenTheNewProfileHasNoDeviceSettings() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let state = AppState(store: ConfigurationStore(url: directory.appendingPathComponent("rekey.json")), startMonitoring: false)
+    let keyboard = KeyboardDevice(identity: .init(vendor_id: 1, product_id: 2), name: "External", transport: "USB", builtin: false)
+    state.devices = [keyboard]
+    state.ensureDevice(keyboard); state.selectedDevice = keyboard.id
+    var other = Profile(name: "Other"); other.selected = false
+    state.config.profiles.append(other)
+    #expect(state.selectedDevice == keyboard.id)
+    state.selectProfile(other.id)
+    #expect(state.selectedDevice == "all")
+    state.simpleMappings = [.init(from: "a", to: "b")]
+    #expect(state.profile.simple.count == 1)
+}

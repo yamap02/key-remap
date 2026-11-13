@@ -33,7 +33,10 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 // Publish UI values explicitly. Transport/task bookkeeping must never take part
 // in SwiftUI Observation tracking in this long-lived menu bar process.
 @MainActor final class AppState: ObservableObject {
-    @Published var config = Configuration()
+    @Published var config = Configuration() {
+        // Another profile may have no settings for the selected keyboard; show the scope edits really go to.
+        didSet { if selectedDevice != "all" && deviceSettingsIndex() == nil { selectedDevice = "all" } }
+    }
     @Published var page: SettingsPage? = .simple
     @Published var devices: [KeyboardDevice] = []
     @Published var selectedDevice = "all"
@@ -71,6 +74,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     private var saving: Task<Void, Never>?
     private var polling: Task<Void, Never>?
     private var lastData: Data?
+    private var lastStamp: ConfigurationStore.FileStamp?
     private var dirty = false
     private var resumeAfterSave = false
     private let store: ConfigurationStore
@@ -145,7 +149,11 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         catch { self.error = error.localizedDescription; saveStatus = "読み込みエラー" }
     }
     func reloadIfChanged() {
-        guard !dirty, saving == nil, let data = try? Data(contentsOf: store.resolvedURL), data != lastData else { return }
+        guard !dirty, saving == nil else { return }
+        let stamp = store.stamp()
+        guard stamp != lastStamp else { return }
+        lastStamp = stamp
+        guard let data = try? Data(contentsOf: store.resolvedURL), data != lastData else { return }
         reload()
     }
     func changed() {
