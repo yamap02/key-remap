@@ -100,7 +100,7 @@ struct RuleEditor: View {
         .onAppear { initialize() }
         .onChange(of: json) { persist() }
         .onChange(of: rule.name) { persist() }
-        // encodeForm が json を変えると onChange(of: json) が persist する。
+        // encodeForm updates json, and onChange(of: json) persists it.
         .onChange(of: formSnapshot) { if mode == "form" && !advancedExisting { encodeForm() } }
 
     }

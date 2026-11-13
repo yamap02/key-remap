@@ -148,7 +148,7 @@ public struct Shortcut: Codable, Equatable, Sendable {
     public var key = "1"
     public var modifiers = ["control", "option", "command"]
     public init() {}
-    /// Agent はキーを Mac の keycode で登録するので、keycode を持つ非修飾キーだけが使える。
+    /// The Agent registers shortcuts by Mac keycode, so only non-modifier keys with a keycode are usable.
     public static func isValidKey(_ key: String) -> Bool {
         KeyCatalog.macKeyCodes.values.contains(key) && !["command", "control", "shift", "option"].contains { key.contains($0) }
     }
