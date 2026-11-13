@@ -91,6 +91,10 @@ int main(){
         e=engine(c);e.process({4,true,100});check(e.next_deadline()==150,"chord deadline");e.tick(149);check(e.next_deadline()==150,"chord deadline before threshold");e.tick(150);check(e.next_deadline()==Engine::no_deadline,"no deadline once chord expires");
         e=engine(c);e.process({4,true,100});expect(e.process({6,true,110}),{{4,true},{6,true}},"non-member down resolves pending chord first");
         e=engine(c);e.process({6,true,90});e.process({4,true,100});expect(e.process({6,false,110}),{{4,true},{6,false}},"pending chord resolves before an earlier key is released");
+        {
+            auto ordered=base();auto chord=basic("a","escape");chord["from"]={{"simultaneous",JSON::array({{{"key","a"}},{{"key","b"}}})}};ordered["profiles"][0]["rules"]={rule(chord),rule(basic("a","escape"))};auto o=engine(ordered);
+            o.process({4,true,100});expect(o.process({225,true,110}),{{41,true},{225,true}},"pending press resolves without a modifier pressed after it");
+        }
         e=engine(c);e.process({5,true,100});e.tick(150);expect(e.process({4,true,200}),{},"chord wait with an emitted member");expect(e.process({5,false,210}),{{4,true},{5,false}},"release of an emitted member resolves pending first");
     }
     {

@@ -183,11 +183,11 @@ class Engine {
     }
     // Any other key event ends a chord wait, so pending presses resolve in press
     // order before that event instead of after the threshold. A press that could
-    // still complete a chord with `trigger` keeps waiting.
-    void flush_pending(const Press* trigger,uint64_t t,Outputs& out) {
+    // still complete a chord with `trigger` keeps waiting; trigger 0 resolves all.
+    void flush_pending(Key trigger,uint64_t t,Outputs& out) {
         while(true) {
             size_t next=max_keys;
-            for(size_t n=0;n<max_keys;++n){auto& q=presses_[n];if(!q.down||!q.pending||(trigger&&chord_member(q,trigger->mapped)))continue;if(next==max_keys||q.started<presses_[next].started)next=n;}
+            for(size_t n=0;n<max_keys;++n){auto& q=presses_[n];if(!q.down||!q.pending||(trigger&&chord_member(q,trigger)))continue;if(next==max_keys||q.started<presses_[next].started)next=n;}
             if(next==max_keys)return;
             presses_[next].pending=false;if(!resolveRule(next,t,out,false))plain(next,t,out);
         }
@@ -243,12 +243,15 @@ public:
     Outputs process(Input e) {
         Outputs out=tick(e.time_ms);auto i=slot(e.key);if(i>=max_keys)return out;auto& p=presses_[i];
         if(paused_||program_.ignore){out.push(e.key,e.down,e.time_ms);return out;}
-        if(e.down){if(p.down)return out;for(auto& q:presses_)if(q.down)q.alone=false;p={};p.down=true;p.started=e.time_ms;p.mapped=program_.simple[i]?program_.simple[i]:e.key;flush_pending(&p,e.time_ms,out);
+        if(e.down){if(p.down)return out;const Key mapped=program_.simple[i]?program_.simple[i]:e.key;
+            // Resolve before registering this key, so its modifier state is not applied to earlier presses.
+            flush_pending(mapped,e.time_ms,out);
+            for(auto& q:presses_)if(q.down)q.alone=false;p={};p.down=true;p.started=e.time_ms;p.mapped=mapped;
             uint8_t mods=0;for(size_t mi=224;mi<232;++mi)if(presses_[mi].down)mods|=modifier(Key(mi));if((mods&0x11) && (mods&0x44) && (mods&0x88) && e.key==41)emergency_start_=e.time_ms;
             if(!resolveRule(i,e.time_ms,out,true))plain(i,e.time_ms,out);
         } else {
             if(!p.down)return out;if(e.key==41||modifier(e.key))emergency_start_=0;
-            flush_pending(nullptr,e.time_ms,out);
+            flush_pending(0,e.time_ms,out);
             if(p.pending){p.pending=false;if(!resolveRule(i,e.time_ms,out,false))plain(i,e.time_ms,out);}
             if(p.layer>=0){if(!program_.layers[p.layer].toggle){layers_[p.layer]=false;if(p.alone&&e.time_ms-p.started<=program_.layer_tap_ms){emit(p.mapped,true,e.time_ms,out);emit(p.mapped,false,e.time_ms,out);}}}
             else if(p.rule>=0){auto& r=program_.rules[p.rule];actions(p.held?r.held:r.to,false,e.time_ms,out,p.rule);if(p.alone&&!p.held&&e.time_ms-p.started<=r.alone_ms)tap(r.alone,e.time_ms,out,p.rule);tap(r.after,e.time_ms,out,p.rule);}
