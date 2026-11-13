@@ -100,7 +100,8 @@ struct RuleEditor: View {
         .onAppear { initialize() }
         .onChange(of: json) { persist() }
         .onChange(of: rule.name) { persist() }
-        .onChange(of: formSnapshot) { if mode == "form" && !advancedExisting { encodeForm(); persist() } }
+        // encodeForm が json を変えると onChange(of: json) が persist する。
+        .onChange(of: formSnapshot) { if mode == "form" && !advancedExisting { encodeForm() } }
 
     }
     var formSnapshot: [String] { [from, to, alone, held, after, String(useAlone), String(useHeld), String(useAfter), app, mandatory] }
@@ -157,7 +158,7 @@ struct RuleEditor: View {
         var m: [String: JSONValue] = ["type": .string("basic"), "from": .object(f), "to": action(to)]
         if useAlone { m["to_if_alone"] = action(alone) }; if useHeld { m["to_if_held_down"] = action(held) }; if useAfter { m["to_after_key_up"] = action(after) }
         if !app.isEmpty { m["conditions"] = .array([.object(["type": .string("frontmost_app_if"), "bundle_identifiers": .array([.string(app)])])]) }
-        let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         json = (try? String(data: e.encode([JSONValue.object(m)]), encoding: .utf8)) ?? "[]"
     }
 }
@@ -223,7 +224,7 @@ struct LayerEditor: View {
         .onChange(of: layer.mode) { persist() }
     }
     func persist() {
-        guard Set(rows.map { $0.from.key }).count == rows.count, !layer.name.isEmpty, !existingNames.contains(layer.name) else { error = "レイヤー名と入力キーを重複しないように指定してください。"; return }
+        guard Set(rows.map { $0.from.key }).count == rows.count, !layer.name.isEmpty, !existingNames.contains(layer.name) else { error = L("レイヤー名と入力キーを重複しないように指定してください。"); return }
         var candidate = layer
         candidate.map = Dictionary(uniqueKeysWithValues: rows.map { ($0.from.key, $0.to[0].key) })
         guard candidate != saved else { error = nil; return }

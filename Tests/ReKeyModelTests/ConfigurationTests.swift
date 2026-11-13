@@ -56,7 +56,8 @@ import Foundation
         #"{"type":"basic","from":{"simultaneous":[{"key":"a"},{"key":"a"}]},"to":[]}"#,
         #"{"type":"basic","from":{"key":"a"},"conditions":[{"type":"event_changed_if"}]}"#,
         #"{"type":"basic","from":{"key":"a"},"to":[{"key":"b","shell_command":"true"}]}"#,
-        #"{"type":"basic","from":{"key":"a"},"parameters":{"basic.simultaneous_threshold_milliseconds":0}}"#
+        #"{"type":"basic","from":{"key":"a"},"parameters":{"basic.simultaneous_threshold_milliseconds":0}}"#,
+        #"{"type":"basic","from":{"key":"a"},"to":[{"key":5}]}"#
     ]
     for text in bad {
         let value = try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
@@ -139,4 +140,12 @@ import Foundation
     let written = try String(decoding: c.encoded(), as: UTF8.self)
     #expect(!written.contains("show_in_menu_bar"))
     #expect(!written.contains("start_at_login"))
+}
+@Test func shortcutKeysMatchWhatTheAgentCanRegister() {
+    #expect(Shortcut.isValidKey("p"))
+    #expect(!Shortcut.isValidKey("left_command"))
+    #expect(!Shortcut.isValidKey("f13"))
+    #expect(!Shortcut.isValidKey("keypad_1"))
+    var c = Configuration(); c.profiles[0].shortcut = .init(); c.profiles[0].shortcut?.key = "f13"
+    #expect(throws: (any Error).self) { try c.encoded() }
 }

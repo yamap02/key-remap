@@ -69,7 +69,7 @@ struct ProfilesView: View {
             GroupBox("キーボードショートカット · \(state.profile.name)") {
                 HStack {
                     Toggle("⌃⌥⌘", isOn: Binding(get: { state.profile.shortcut != nil }, set: { state.config.profiles[state.profileIndex].shortcut = $0 ? state.config.unusedShortcut() : nil; state.changed() }))
-                    if let shortcut = state.profile.shortcut { KeyPicker(title: "ショートカットのキー", selection: Binding(get: { shortcut.key }, set: { state.config.profiles[state.profileIndex].shortcut?.key = $0; state.changed() })) }
+                    if let shortcut = state.profile.shortcut { KeyPicker(title: "ショートカットのキー", selection: Binding(get: { shortcut.key }, set: { state.config.profiles[state.profileIndex].shortcut?.key = $0; state.changed() }), allows: Shortcut.isValidKey) }
                 }.padding(8)
                 if state.config.shortcutConflicts(profile: state.profile.id) {
                     Label("このショートカットは他のプロファイルまたは一時停止（⌃⌥⌘P）と重複しているため使用できません。", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).padding([.horizontal, .bottom], 8)
@@ -111,7 +111,7 @@ struct PermissionsView: View {
                 permission("入力監視", icon: "waveform.path", status: state.inputMonitoringReady ? "許可済み" : "未許可", ready: state.inputMonitoringReady, description: "rekey-core のみ許可してください。場所は /Applications/ReKey.app/Contents/Library/HelperTools/rekey-core です。Finder で選択された rekey-core をシステム設定の入力監視リストに追加し、オンにしてください。許可後に「入力サービスを再起動」を押してください。") { state.requestInputMonitoring() }
                 permission("アクセシビリティ", icon: "accessibility", status: state.accessibility ? "許可済み" : "EventViewer 使用時のみ必要", ready: state.accessibility, description: "通常のリマップには不要です。EventViewer のパスワード欄確認にのみ使用します。必要な場合は ReKeyAgent のみ許可してください。ReKey の許可は不要です。") { state.requestAgentPermissions(); state.openPrivacy("Privacy_Accessibility") }
                 permission("仮想 HID ドライバ", icon: "puzzlepiece.extension", status: state.driverActive ? "接続済み（評価用）" : "未接続", ready: state.driverActive, description: "開発版は Karabiner の公開ドライバを利用します。「確認する」で接続用デーモンも登録します。バックグラウンド項目とドライバ拡張を許可してください。") { state.setupDriver() }
-                permission("入力サービス", icon: "gearshape.2", status: state.daemonStatus.rawValue, ready: state.daemonStatus == .running, description: "rekey-core が入力の取得・変換・仮想 HID 出力を行います。root サービスは1つです。ReKeyAgent はユーザー権限で動作します。") { if let u = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") { NSWorkspace.shared.open(u) } }
+                permission("入力サービス", icon: "gearshape.2", status: state.daemonStatus.rawValue, ready: state.daemonStatus == .running, description: "rekey-core が入力の取得・変換・仮想 HID 出力を行います。root サービスは1つです。ReKeyAgent はユーザー権限で動作します。") { SMAppService.openSystemSettingsLoginItems() }
                 HStack { Button("入力サービスを登録") { state.registerServices() }; Button("登録を解除") { state.unregisterServices() }; Button("入力サービスを再起動") { state.restartServices() } }.disabled(state.recoveringServices || state.updatePrepared || state.serviceOperationInProgress)
                 if let runtimeError = state.runtime.status?.error, !runtimeError.isEmpty { Text(runtimeError).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
                 GroupBox {

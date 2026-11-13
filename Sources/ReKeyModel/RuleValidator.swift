@@ -38,7 +38,7 @@ public enum RuleValidator {
                 let ac = try object(a, fields: ["key", "modifiers", "shell_command", "open_app", "select_input_source", "set_variable", "notify", "sticky_modifier", "layer"], label: field)
                 let actionTypes = ["key", "shell_command", "open_app", "select_input_source", "set_variable", "notify", "sticky_modifier", "layer"].filter { ac[$0] != nil }
                 guard actionTypes.count == 1 else { throw ConfigError.invalid(L("1 アクションに動作を 1 つ指定してください。")) }
-                if let key = ac["key"]?.string { try validateKey(key) }
+                if let key = ac["key"] { guard let name = key.string else { throw ConfigError.invalid(String(format: L("%@ は空でない文字列で指定してください。"), "key")) }; try validateKey(name) }
                 if let mods = ac["modifiers"] { guard ac["key"] != nil, try strings(mods, label: "modifiers").allSatisfy({ modifiers.contains($0) }) else { throw ConfigError.invalid(L("出力の修飾キーが無効です。")) } }
                 for field in ["shell_command", "open_app", "notify", "select_input_source"] where ac[field] != nil {
                     guard let text = ac[field]?.string, !text.isEmpty, text.utf8.count <= 8192 else { throw ConfigError.invalid(String(format: L("%@ は空でない文字列で指定してください。"), field)) }

@@ -1,6 +1,5 @@
 import Testing
 import Foundation
-import Darwin
 @testable import ReKeyModel
 
 private func temporaryStore() -> (URL, ConfigurationStore) {

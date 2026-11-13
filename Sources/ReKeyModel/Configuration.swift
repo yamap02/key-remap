@@ -148,6 +148,10 @@ public struct Shortcut: Codable, Equatable, Sendable {
     public var key = "1"
     public var modifiers = ["control", "option", "command"]
     public init() {}
+    /// Agent はキーを Mac の keycode で登録するので、keycode を持つ非修飾キーだけが使える。
+    public static func isValidKey(_ key: String) -> Bool {
+        KeyCatalog.macKeyCodes.values.contains(key) && !["command", "control", "shift", "option"].contains { key.contains($0) }
+    }
 }
 public struct Profile: Codable, Identifiable, Equatable, Sendable {
     public var id = UUID().uuidString
@@ -209,7 +213,7 @@ public struct Configuration: Codable, Equatable, Sendable {
         guard (1...5000).contains(t.alone), (1...5000).contains(t.held_down), (1...500).contains(t.simultaneous) else { throw ConfigError.invalid(L("判定閾値が範囲外です。")) }
         for p in profiles {
             if let shortcut = p.shortcut {
-                guard KeyCatalog.macKeyCodes.values.contains(shortcut.key), !shortcut.modifiers.isEmpty, shortcut.modifiers.allSatisfy({ ["control", "option", "shift", "command"].contains($0) }), !shortcut.key.contains("command"), !shortcut.key.contains("control"), !shortcut.key.contains("shift"), !shortcut.key.contains("option") else { throw ConfigError.invalid(L("プロファイルのショートカットが無効です。")) }
+                guard Shortcut.isValidKey(shortcut.key), !shortcut.modifiers.isEmpty, shortcut.modifiers.allSatisfy({ ["control", "option", "shift", "command"].contains($0) }) else { throw ConfigError.invalid(L("プロファイルのショートカットが無効です。")) }
             }
             try Self.validate(simple: p.simple, layers: p.layers, rules: p.rules)
             for d in p.devices { guard ["auto", "ansi", "iso", "jis"].contains(d.keyboard_type) else { throw ConfigError.invalid(L("キーボード種別が無効です。")) }; try Self.validate(simple: d.simple, layers: d.layers, rules: d.rules) }

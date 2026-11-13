@@ -101,14 +101,15 @@ struct ScopePicker: View {
 struct KeyPicker: View {
     var title: String
     @Binding var selection: String
+    var allows: (String) -> Bool = { _ in true }
     @State private var capture = false
     var body: some View {
         HStack(spacing: 6) {
             Menu {
-                ForEach(KeyCatalog.Category.allCases) { category in
+                ForEach(KeyCatalog.Category.allCases.filter { $0.keys.contains(where: allows) }) { category in
                     Menu {
                         Picker(L(title), selection: $selection) {
-                            ForEach(category.keys, id: \.self) { key in
+                            ForEach(category.keys.filter(allows), id: \.self) { key in
                                 Text(KeyCatalog.label(key)).tag(key)
                             }
                         }.pickerStyle(.inline).labelsHidden()
@@ -126,11 +127,12 @@ struct KeyPicker: View {
             .accessibilityLabel(L(title))
             .accessibilityValue(KeyCatalog.label(selection))
             Button { capture = true } label: { Image(systemName: "record.circle") }.buttonStyle(.borderless).help("キーを押して入力")
-        }.sheet(isPresented: $capture) { CaptureSheet(selection: $selection) }
+        }.sheet(isPresented: $capture) { CaptureSheet(selection: $selection, allows: allows) }
     }
 }
 struct CaptureSheet: View {
     @Binding var selection: String
+    let allows: (String) -> Bool
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(spacing: 20) {
@@ -138,7 +140,7 @@ struct CaptureSheet: View {
             Text("割り当てるキーを押してください").font(.title3.bold())
             Text("修飾キー・英数・かなも入力できます。").foregroundStyle(.secondary)
             Text("反応しない JIS キーは、キャンセルして「日本語・国際キー」から選択してください。").font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            KeyCaptureRepresentable { selection = $0; dismiss() }.frame(width: 1, height: 1)
+            KeyCaptureRepresentable { guard allows($0) else { return }; selection = $0; dismiss() }.frame(width: 1, height: 1)
             Button("キャンセル", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
         }.padding(40).frame(width: 430)
     }
