@@ -88,7 +88,7 @@ struct Program {
                 Condition condition;auto type=c.at("type").get<std::string>();condition.unless=type.ends_with("_unless");
                 if(type=="frontmost_app_if"||type=="frontmost_app_unless") {condition.kind=Condition::app;for(auto& pat:c.at("bundle_identifiers"))condition.patterns.emplace_back(pat.get<std::string>());}
                 else if(type=="input_source_if"||type=="input_source_unless") {condition.kind=Condition::source;for(auto& src:c.at("input_sources")){if(!src.contains("input_source_id"))throw std::runtime_error("input_source_id is required");condition.patterns.emplace_back(src.at("input_source_id").get<std::string>());}}
-                else if(type=="device_if"||type=="device_unless") {condition.kind=Condition::device;for(auto& id:c.at("identifiers"))condition.devices.push_back({id.at("vendor_id"),id.at("product_id"),id.value("serial",std::string())});}
+                else if(type=="device_if"||type=="device_unless") {condition.kind=Condition::device;for(auto& id:c.at("identifiers"))condition.devices.push_back({id.at("vendor_id"),id.at("product_id"),id.contains("serial")&&!id.at("serial").is_null()?id.at("serial").get<std::string>():std::string()});}
                 else if(type=="keyboard_type_if"||type=="keyboard_type_unless") {condition.kind=Condition::keyboard;condition.strings=c.at("keyboard_types").get<std::vector<std::string>>();}
                 else if(type=="variable_if"||type=="variable_unless") {condition.kind=Condition::variable;condition.index=out.variable_index(c.at("name"));condition.value=c.at("value");}
                 else if(type=="layer_if"||type=="layer_unless") {condition.kind=Condition::layer;condition.index=out.layer_index(c.at("name"));condition.value=1;}
